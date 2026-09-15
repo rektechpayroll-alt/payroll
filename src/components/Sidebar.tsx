@@ -54,12 +54,12 @@ function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" 
 }
 
 const NAV = [
-  { href: "/", label: "Dashboard", icon: "grid" as const, badge: true },
-  { href: "/profitability", label: "Profitability", icon: "trend" as const },
-  { href: "/employees", label: "Employees", icon: "people" as const },
-  { href: "/reports", label: "Reports", icon: "doc" as const },
-  { href: "/integrations", label: "Integrations", icon: "card" as const },
-  { href: "/settings", label: "Settings", icon: "gear" as const },
+  { href: "/dashboard", label: "Dashboard", icon: "grid" as const, badge: true },
+  { href: "/dashboard/profitability", label: "Profitability", icon: "trend" as const },
+  { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
+  { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },
+  { href: "/dashboard/integrations", label: "Integrations", icon: "card" as const },
+  { href: "/dashboard/settings", label: "Settings", icon: "gear" as const },
 ];
 
 export function Sidebar({
@@ -75,14 +75,14 @@ export function Sidebar({
 
   return (
     <aside className="flex w-[236px] flex-none flex-col gap-[22px] border-r border-[var(--border)] bg-[var(--surface-2)] p-4 max-[760px]:hidden">
-      <div className="flex items-center gap-[9px] px-1">
+      <Link href="/" className="flex items-center gap-[9px] px-1">
         <div className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-[var(--accent)]">
           <svg viewBox="0 0 24 24" fill="none" className="h-[15px] w-[15px]">
             <path d="M5 12.5L10 17L19 7" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
         <div className="font-display text-[17px] font-semibold tracking-tight">Verity</div>
-      </div>
+      </Link>
 
       <div className="flex items-center justify-between gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-2.5 py-[9px] text-[12.5px]">
         <div className="min-w-0">

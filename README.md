@@ -5,6 +5,13 @@ full-stack Next.js application (not a static mockup). It's seeded with a sample 
 Harrow & Vale Property Group, a commercial real-estate agency — to demonstrate the product
 in a realistic working state.
 
+## Site map
+
+- `/` — public marketing site (problem, product breakdown, competitor comparison, pricing), built from the
+  project's differentiation strategy doc.
+- `/product`, `/compare`, `/pricing` — supporting marketing pages.
+- `/dashboard` — the working payroll approval + profitability demo (previously mounted at `/`).
+
 ## What it does
 
 - **Exception-first payroll review.** Each pay run surfaces only what needs a human look —
@@ -40,7 +47,8 @@ request and seeded with sample data — delete that file to reset to the origina
 ```
 src/
   app/
-    (shell)/            route group sharing the sidebar layout
+    (marketing)/        public site — layout, home, /product, /compare, /pricing
+    dashboard/          the payroll demo — sidebar layout, approval + profitability views
       page.tsx           dashboard — payroll approval
       profitability/     profitability index
       employees/         placeholder
@@ -50,11 +58,15 @@ src/
     api/
       lines/resolve/     POST — mark a flagged line resolved
       runs/approve/       POST — approve the current run (full or partial)
-  components/            UI building blocks (ReviewPanel is the interactive core)
+  components/
+    marketing/           header/footer for the public site
+    ...                  dashboard UI building blocks (ReviewPanel is the interactive core)
   lib/
     db.ts                schema + seed data
     queries.ts            data-access layer used by pages and API routes
     format.ts             currency formatting helpers
+    pillars.ts            differentiation copy shared by the marketing pages
+    competitors.ts         competitor teardown data shared by the marketing pages
 ```
 
 ## Status
