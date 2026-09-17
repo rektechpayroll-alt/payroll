@@ -1,10 +1,10 @@
 import { Sidebar } from "@/components/Sidebar";
 import { getCompany, getCurrentRun, getLinesForRun } from "@/lib/queries";
 
-export default function ShellLayout({ children }: { children: React.ReactNode }) {
-  const company = getCompany();
-  const run = getCurrentRun();
-  const lines = getLinesForRun(run.id);
+export default async function ShellLayout({ children }: { children: React.ReactNode }) {
+  const company = await getCompany();
+  const run = await getCurrentRun();
+  const lines = await getLinesForRun(run.id);
   const pendingCount = lines.filter((l) => l.severity && !l.resolved).length;
 
   return (

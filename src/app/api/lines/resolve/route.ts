@@ -7,6 +7,6 @@ export async function POST(req: NextRequest) {
   if (!lineId) {
     return NextResponse.json({ error: "lineId is required" }, { status: 400 });
   }
-  const line = resolveLine(lineId);
+  const line = await resolveLine(lineId);
   return NextResponse.json({ line });
 }

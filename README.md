@@ -28,19 +28,23 @@ in a realistic working state.
 ## Stack
 
 - **Next.js 16** (App Router, TypeScript, Tailwind CSS v4)
-- **SQLite** via Node's built-in `node:sqlite` (no native build step, no external engine
-  download — the database file is created and seeded automatically on first run)
+- **Postgres** via `pg` (node-postgres) — works with any Postgres provider (Supabase,
+  Vercel Postgres, Neon, a local install). Schema and seed data are created automatically
+  on first request, same as the previous SQLite version.
 - No ORM: a small hand-written query layer in `src/lib/queries.ts`
 
 ## Running it locally
 
 ```bash
 npm install
+cp .env.example .env.local   # point DATABASE_URL at your Postgres instance
 npm run dev
 ```
 
-Then open http://localhost:3000. The database is created at `data/verity.db` on first
-request and seeded with sample data — delete that file to reset to the original seed.
+Then open http://localhost:3000. The schema and demo company are created automatically
+on first request — drop the tables (or point at a fresh database) to reset to the
+original seed. See `DEPLOY.md` for deploying to Vercel with a Supabase database and
+pushing the code to GitHub.
 
 ## Project structure
 

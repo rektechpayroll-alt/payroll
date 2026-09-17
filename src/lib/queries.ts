@@ -1,4 +1,5 @@
-import { getDb } from "./db";
+import { randomUUID } from "node:crypto";
+import { getPool, ready } from "./db";
 
 const COMPANY_ID = "harrow-vale";
 
@@ -31,63 +32,63 @@ export type PayrollRun = {
   mid_month_note: string | null;
 };
 
-export function getCompany() {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM companies WHERE id = ?")
-    .get(COMPANY_ID) as { id: string; name: string; employee_count: number; pay_schedule: string };
+export async function getCompany() {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM companies WHERE id = $1", [COMPANY_ID]);
+  return rows[0] as { id: string; name: string; employee_count: number; pay_schedule: string };
 }
 
-export function getCurrentRun(): PayrollRun {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT * FROM payroll_runs WHERE company_id = ? ORDER BY rowid DESC LIMIT 1"
-    )
-    .get(COMPANY_ID) as PayrollRun;
+export async function getCurrentRun(): Promise<PayrollRun> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM payroll_runs WHERE company_id = $1 ORDER BY created_at DESC LIMIT 1",
+    [COMPANY_ID]
+  );
+  return rows[0] as PayrollRun;
 }
 
-export function getLinesForRun(runId: string): PayrollLine[] {
-  const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM payroll_lines WHERE run_id = ? ORDER BY sort_order ASC")
-    .all(runId) as PayrollLine[];
-  // node:sqlite returns null-prototype row objects, which React Server
-  // Components refuse to serialize across the client-component boundary.
-  return rows.map((r) => ({ ...r }));
+export async function getLinesForRun(runId: string): Promise<PayrollLine[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM payroll_lines WHERE run_id = $1 ORDER BY sort_order ASC",
+    [runId]
+  );
+  return rows as PayrollLine[];
 }
 
-export function getSourceCounts(runId: string) {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT source, COUNT(*) as n FROM payroll_lines
-       WHERE run_id = ? AND severity IS NOT NULL AND resolved = 0
-       GROUP BY source`
-    )
-    .all(runId) as { source: string; n: number }[];
+export async function getSourceCounts(runId: string) {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT source, COUNT(*) as n FROM payroll_lines
+     WHERE run_id = $1 AND severity IS NOT NULL AND resolved = 0
+     GROUP BY source`,
+    [runId]
+  );
+  return rows.map((r) => ({ source: r.source, n: Number(r.n) })) as { source: string; n: number }[];
 }
 
-export function resolveLine(lineId: string) {
-  const db = getDb();
-  db.prepare("UPDATE payroll_lines SET resolved = 1 WHERE id = ?").run(lineId);
-  return db.prepare("SELECT * FROM payroll_lines WHERE id = ?").get(lineId) as PayrollLine;
+export async function resolveLine(lineId: string): Promise<PayrollLine> {
+  await ready();
+  const pool = getPool();
+  await pool.query("UPDATE payroll_lines SET resolved = 1 WHERE id = $1", [lineId]);
+  const { rows } = await pool.query("SELECT * FROM payroll_lines WHERE id = $1", [lineId]);
+  return rows[0] as PayrollLine;
 }
 
-export function approveRun(runId: string) {
-  const db = getDb();
-  const lines = getLinesForRun(runId);
+export async function approveRun(runId: string) {
+  await ready();
+  const pool = getPool();
+  const lines = await getLinesForRun(runId);
   const blocking = lines.filter((l) => l.severity === "critical" && !l.resolved);
   const status = blocking.length > 0 ? "approved_partial" : "approved";
-  db.prepare("UPDATE payroll_runs SET status = ? WHERE id = ?").run(status, runId);
+  await pool.query("UPDATE payroll_runs SET status = $1 WHERE id = $2", [status, runId]);
 
   const included = lines.filter((l) => !(l.severity === "critical" && !l.resolved));
   const now = "Just now";
-  const db2 = getDb();
-  const insertAudit = db2.prepare(
-    `INSERT INTO audit_log (id, company_id, kind, message, detail, occurred_at, sort_order)
-     VALUES (?, ?, 'approval', ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM audit_log WHERE company_id = ?))`
-  );
   const message =
     blocking.length > 0
       ? `Approved ${included.length} of ${lines.length} — Jack Whitmore excluded`
@@ -96,18 +97,24 @@ export function approveRun(runId: string) {
     blocking.length > 0
       ? "2FA verified · will join the next run once bank details are confirmed"
       : "2FA verified · BACS submission and HMRC RTI filing triggered";
-  insertAudit.run(crypto.randomUUID(), COMPANY_ID, message, detail, now, COMPANY_ID);
+
+  await pool.query(
+    `INSERT INTO audit_log (id, company_id, kind, message, detail, occurred_at, sort_order)
+     VALUES ($1, $2, 'approval', $3, $4, $5, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM audit_log WHERE company_id = $6))`,
+    [randomUUID(), COMPANY_ID, message, detail, now, COMPANY_ID]
+  );
 
   return { status, blockingCount: blocking.length, includedCount: included.length, total: lines.length };
 }
 
-export function getAuditLog(limit = 6) {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT * FROM audit_log WHERE company_id = ? ORDER BY sort_order DESC LIMIT ?"
-    )
-    .all(COMPANY_ID, limit) as {
+export async function getAuditLog(limit = 6) {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM audit_log WHERE company_id = $1 ORDER BY sort_order DESC LIMIT $2",
+    [COMPANY_ID, limit]
+  );
+  return rows as {
     id: string;
     kind: string;
     message: string;
@@ -116,13 +123,14 @@ export function getAuditLog(limit = 6) {
   }[];
 }
 
-export function getCostTrend() {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT * FROM cost_trend WHERE company_id = ? ORDER BY sort_order ASC"
-    )
-    .all(COMPANY_ID) as {
+export async function getCostTrend() {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM cost_trend WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as {
     month_label: string;
     cost_to_company: number;
     deals_index: number;
@@ -130,11 +138,11 @@ export function getCostTrend() {
   }[];
 }
 
-export function getProfitabilityStats() {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM profitability_stats WHERE company_id = ?")
-    .get(COMPANY_ID) as {
+export async function getProfitabilityStats() {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM profitability_stats WHERE company_id = $1", [COMPANY_ID]);
+  return rows[0] as {
     bonus_budget: number;
     bonus_budget_note: string;
     optimum_role: string;
@@ -147,11 +155,12 @@ export function getProfitabilityStats() {
   };
 }
 
-export function getRecommendations() {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT body FROM recommendations WHERE company_id = ? ORDER BY sort_order ASC"
-    )
-    .all(COMPANY_ID) as { body: string }[];
+export async function getRecommendations() {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT body FROM recommendations WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as { body: string }[];
 }

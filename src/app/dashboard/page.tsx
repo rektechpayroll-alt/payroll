@@ -8,12 +8,12 @@ import { getCompany, getCurrentRun, getLinesForRun, getAuditLog, getCostTrend } 
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
-  const company = getCompany();
-  const run = getCurrentRun();
-  const lines = getLinesForRun(run.id);
-  const audit = getAuditLog();
-  const trend = getCostTrend();
+export default async function DashboardPage() {
+  const company = await getCompany();
+  const run = await getCurrentRun();
+  const lines = await getLinesForRun(run.id);
+  const audit = await getAuditLog();
+  const trend = await getCostTrend();
 
   const headroom = run.connected_balance - run.net_pay;
   const lastMonthCost = trend[trend.length - 2]?.cost_to_company ?? run.gross_pay;

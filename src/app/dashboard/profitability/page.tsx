@@ -24,11 +24,11 @@ function ClockPillIcon() {
   );
 }
 
-export default function ProfitabilityPage() {
-  const company = getCompany();
-  const trend = getCostTrend();
-  const stats = getProfitabilityStats();
-  const recs = getRecommendations();
+export default async function ProfitabilityPage() {
+  const company = await getCompany();
+  const trend = await getCostTrend();
+  const stats = await getProfitabilityStats();
+  const recs = await getRecommendations();
 
   return (
     <div>
