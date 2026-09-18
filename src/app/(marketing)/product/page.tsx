@@ -7,6 +7,7 @@ const GROUPS: Pillar["group"][] = [
   "One shared source of truth",
   "Compliance that keeps up",
   "See around corners",
+  "Built to scale",
 ];
 
 export default function ProductPage() {

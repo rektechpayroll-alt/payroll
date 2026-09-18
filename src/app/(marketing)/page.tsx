@@ -17,7 +17,7 @@ const PROBLEMS = [
   },
 ];
 
-const HIGHLIGHT_LETTERS = ["A", "B", "C", "E", "D", "I"];
+const HIGHLIGHT_LETTERS = ["A", "B", "E", "D", "K", "L"];
 const highlights = PILLARS.filter((p) => HIGHLIGHT_LETTERS.includes(p.letter));
 
 export default function MarketingHome() {
@@ -28,7 +28,7 @@ export default function MarketingHome() {
         <div className="max-w-[760px]">
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[12px] font-medium text-[var(--ink-secondary)]">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--good)]" />
-            Built for UK SMEs, 1&ndash;50 employees
+            Built for UK businesses from first hire to 1,000+ employees
           </div>
           <h1 className="font-display mt-5 text-[38px] font-semibold leading-[1.1] tracking-tight sm:text-[52px]">
             Payroll that catches problems before payday, not after.
@@ -36,7 +36,8 @@ export default function MarketingHome() {
           <p className="mt-5 max-w-[600px] text-[16px] leading-relaxed text-[var(--ink-secondary)] sm:text-[17px]">
             Getting the sums right is a solved problem — every payroll tool manages that. Verity is built around
             everything else: reconciling messy source data, catching anomalies mid-cycle, and explaining exactly why
-            a payslip changed, to HR, the employee and the accountant at once.
+            a payslip changed, to HR, the employee and the accountant at once — with the approval chains, entity
+            consolidation and SSO a larger organisation needs once one dashboard isn't enough.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -71,9 +72,9 @@ export default function MarketingHome() {
             </p>
           </div>
           <div>
-            <div className="font-num text-[26px] font-semibold text-[var(--accent-strong)]">~40%</div>
+            <div className="font-num text-[26px] font-semibold text-[var(--accent-strong)]">3 tiers</div>
             <p className="mt-1 text-[13px] text-[var(--ink-secondary)]">
-              of UK businesses have 1&ndash;50 employees — too complex for desktop tools, badly served by enterprise ones.
+              0&ndash;100, 100&ndash;1,000, and 1,000+ employees — the same exception-first review flow at every size.
             </p>
           </div>
         </div>

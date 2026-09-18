@@ -3,7 +3,13 @@ export type Pillar = {
   title: string;
   summary: string;
   detail: string;
-  group: "Catch it before payday" | "Explain, don't escalate" | "One shared source of truth" | "Compliance that keeps up" | "See around corners";
+  group:
+    | "Catch it before payday"
+    | "Explain, don't escalate"
+    | "One shared source of truth"
+    | "Compliance that keeps up"
+    | "See around corners"
+    | "Built to scale";
 };
 
 export const PILLARS: Pillar[] = [
@@ -86,5 +92,37 @@ export const PILLARS: Pillar[] = [
     detail:
       "None of the incumbents offer anything like it — today they're all backward-looking compliance tools. Verity's simulator lets an owner model a new hire, a raise, or a bonus round before committing to it.",
     group: "See around corners",
+  },
+  {
+    letter: "K",
+    title: "Multi-entity consolidation",
+    summary: "One parent view across subsidiaries, business units or payroll entities.",
+    detail:
+      "Group structures don't run one payroll — they run several, often on different schedules. Verity consolidates every entity into a single reconciled group view for finance, while each entity's own team keeps a scoped dashboard for just their headcount, so growth by acquisition or by opening a new legal entity doesn't mean bolting on a second system.",
+    group: "Built to scale",
+  },
+  {
+    letter: "L",
+    title: "Role-based approval chains",
+    summary: "Configurable multi-step sign-off with delegated approval and spend thresholds.",
+    detail:
+      "A 12-person business needs one approver; a 1,000-person one needs a chain — team lead, department head, finance — often with delegation when someone's on leave and different thresholds for who can approve what. Approval workflows are fully configurable per entity or department rather than hard-coded to a single owner.",
+    group: "Built to scale",
+  },
+  {
+    letter: "M",
+    title: "Enterprise SSO & granular permissions",
+    summary: "SAML/SSO login, SCIM provisioning, and field-level access scoped by role.",
+    detail:
+      "Single sign-on and automatic user provisioning through your identity provider, plus permissions scoped down to the field level — a department head sees their team's numbers, not the whole company's — so payroll access follows the same security model as the rest of your enterprise stack instead of living outside it.",
+    group: "Built to scale",
+  },
+  {
+    letter: "N",
+    title: "Open API & HRIS sync",
+    summary: "A documented REST API, webhooks, and native sync with Workday, BambooHR and iTrent.",
+    detail:
+      "Moving a 1,000-person org onto a new payroll system is a nonstarter if it means a rip-and-replace of the HRIS you already run. Verity syncs natively with the HR systems already in place and exposes a documented API and webhooks for anything custom, so payroll becomes another connected system rather than a second source of truth.",
+    group: "Built to scale",
   },
 ];

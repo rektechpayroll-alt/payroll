@@ -2,13 +2,14 @@ import Link from "next/link";
 
 const TIERS = [
   {
-    name: "Starter",
-    range: "1–10 employees",
-    price: "£29",
-    perEmployee: "+ £4",
+    name: "Business",
+    range: "0–100 employees",
+    price: "£49",
+    perEmployee: "+ £3.50",
     blurb: "Everything you need to run exception-first payroll without an accountant on standby.",
     features: [
       "Deterministic payroll engine + AI variance layer",
+      "Continuous Payroll Ledger with mid-month preview runs",
       "Conversational Payslip Explainer",
       "Direct HMRC RTI (FPS/EPS) + NEST pipeline",
       "Full statutory coverage (SSP/SMP/SPP/SAP/ShPP, NMW, IR35)",
@@ -16,29 +17,32 @@ const TIERS = [
   },
   {
     name: "Growth",
-    range: "11–50 employees",
-    price: "£79",
-    perEmployee: "+ £4",
-    blurb: "Adds the multi-party dashboard and cross-system ingestion once HR and accounting split apart.",
+    range: "100–1,000 employees",
+    price: "£299",
+    perEmployee: "+ £2.25",
+    blurb: "Adds the multi-party dashboard, cross-system ingestion and planning tools once HR and accounting split into their own teams.",
     features: [
-      "Everything in Starter",
+      "Everything in Business",
       "HR + Employee + Accountant dashboard architecture",
       "Cross-system ingestion agent (CSV/PDF/T&A auto-mapping)",
       "Overtime, leave & expenses portal with bank reconciliation",
+      "Flexible rules & workflow engine",
       "“What if?” Payroll Simulator",
     ],
     highlighted: true,
   },
   {
-    name: "Scale",
-    range: "50+ employees",
+    name: "Enterprise",
+    range: "1,000+ employees",
     price: "Custom",
     perEmployee: null,
-    blurb: "For businesses with more complex approval chains or multiple entities.",
+    blurb: "For group structures, complex approval chains, and payroll teams that need to plug into an existing enterprise stack.",
     features: [
       "Everything in Growth",
-      "Custom rules & workflow configuration",
-      "Multi-entity consolidation",
+      "Multi-entity consolidation across subsidiaries",
+      "Role-based approval chains with delegated sign-off",
+      "Enterprise SSO (SAML) & SCIM provisioning",
+      "Open API & native HRIS sync (Workday, BambooHR, iTrent)",
       "Dedicated onboarding & priority support",
     ],
   },
@@ -53,9 +57,10 @@ export default function PricingPage() {
           Priced for the value it delivers, not just your headcount.
         </h1>
         <p className="mx-auto mt-5 max-w-[600px] text-[16px] leading-relaxed text-[var(--ink-secondary)]">
-          Most UK payroll tools charge more per employee as you grow — punishing the exact growth you're trying to
-          achieve. Verity's per-employee rate stays flat across tiers; what changes as you move up is the depth of
-          the AI variance, ingestion and multi-party dashboard features, not the price of the people you already have.
+          Most UK payroll tools charge a flat per-employee rate no matter how big you get — punishing the exact
+          growth you're trying to achieve. Verity's per-employee rate steps down as you move into a bigger tier, and
+          each tier adds the features that headcount actually demands — AI variance, cross-system ingestion,
+          multi-entity consolidation, enterprise SSO — rather than just multiplying the same bill.
         </p>
       </section>
 
@@ -117,14 +122,15 @@ export default function PricingPage() {
       <section className="border-t border-[var(--border)] py-16">
         <div className="mx-auto max-w-[840px] px-5">
           <h2 className="font-display text-[22px] font-semibold tracking-tight sm:text-[26px]">
-            Why not price per employee like everyone else?
+            Why does the per-employee rate go down, not up?
           </h2>
           <p className="mt-4 text-[14.5px] leading-relaxed text-[var(--ink-secondary)]">
-            Every per-employee-per-month competitor — PayFit, Employment Hero, Rippling, BrightPay — scales price
-            with headcount alone, and it's a well-documented reason growing businesses resent PayFit specifically.
-            Verity's tiers gate feature depth, not the cost of people you already employ, and the value on top of
-            that — errors caught before payday, penalties avoided, hours of reconciliation removed — is what future
-            add-ons will be priced against, not headcount.
+            Every per-employee-per-month competitor — PayFit, Employment Hero, Rippling, BrightPay — charges the
+            same rate no matter how big you get, and it's a well-documented reason growing businesses resent PayFit
+            specifically. Verity's rate steps down at 100 and again at 1,000 employees, because the marginal cost of
+            running one more person through an already-configured payroll is small — the real cost is the setup,
+            the integrations and the review time, which is what each tier's added features are actually priced
+            against, not raw headcount.
           </p>
         </div>
       </section>

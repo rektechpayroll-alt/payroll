@@ -14,7 +14,7 @@ export function MarketingFooter() {
             <span className="font-display text-[16px] font-semibold tracking-tight">Verity</span>
           </div>
           <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-muted)]">
-            Payroll for UK SMEs that catches problems before payday — not after.
+            UK payroll that catches problems before payday — not after, from first hire to 1,000+ employees.
           </p>
         </div>
 

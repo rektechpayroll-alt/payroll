@@ -1,9 +1,10 @@
 # Verity — Payroll approval
 
-A payroll approval and profitability dashboard for UK small businesses, built as a real
-full-stack Next.js application (not a static mockup). It's seeded with a sample client —
-Harrow & Vale Property Group, a commercial real-estate agency — to demonstrate the product
-in a realistic working state.
+A payroll approval and profitability dashboard for UK businesses of any size — priced across
+three tiers from 0–100, 100–1,000, and 1,000+ employees — built as a real full-stack Next.js
+application (not a static mockup). It's seeded with a sample client — Harrow & Vale Property
+Group, a commercial real-estate agency — to demonstrate the product in a realistic working
+state.
 
 ## Site map
 
