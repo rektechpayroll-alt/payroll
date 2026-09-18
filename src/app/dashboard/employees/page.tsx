@@ -1,10 +1,23 @@
-import { ComingSoon } from "@/components/ComingSoon";
+import { EmployeeDirectory } from "@/components/EmployeeDirectory";
+import { getCompany, getCurrentRun, getEmployees, getLinesForRun } from "@/lib/queries";
 
-export default function EmployeesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function EmployeesPage() {
+  const company = await getCompany();
+  const employees = await getEmployees();
+  const run = await getCurrentRun();
+  const lines = run ? await getLinesForRun(run.id) : [];
+
   return (
-    <ComingSoon
-      title="Employees"
-      note="A full employee directory — profiles, pay history, tax codes and pension status — lives here next."
-    />
+    <div>
+      <div className="mb-[18px]">
+        <h1 className="font-display text-[26px] font-semibold">Employees</h1>
+        <div className="mt-1 text-[13px] text-[var(--ink-secondary)]">
+          {company.name} · {employees.length} employees
+        </div>
+      </div>
+      <EmployeeDirectory employees={employees} lines={lines} />
+    </div>
   );
 }

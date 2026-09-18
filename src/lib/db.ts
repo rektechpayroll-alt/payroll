@@ -113,6 +113,42 @@ async function createSchema(): Promise<void> {
       staffing_fte_delta DOUBLE PRECISION NOT NULL,
       staffing_flag TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS employees (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      email TEXT NOT NULL,
+      employment_type TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      tax_code TEXT NOT NULL,
+      ni_number TEXT NOT NULL,
+      weekly_hours DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS integrations (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'not_connected',
+      last_synced_at TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  // Additive migrations for databases created before this schema revision —
+  // CREATE TABLE IF NOT EXISTS above won't add columns to a table that
+  // already exists, so any new column on a pre-existing table needs its own
+  // idempotent ALTER TABLE here.
+  await pool.query(`
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS notify_on_flag BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS notify_on_approval BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS approval_mode TEXT NOT NULL DEFAULT 'manual';
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_id TEXT REFERENCES employees(id);
   `);
 }
 
@@ -120,7 +156,12 @@ async function seed(): Promise<void> {
   const pool = getPool();
   const companyId = "harrow-vale";
   const existing = await pool.query("SELECT id FROM companies WHERE id = $1", [companyId]);
-  if (existing.rowCount) return;
+  if (existing.rowCount) {
+    // Base seed already ran in an earlier version of the schema — still make
+    // sure anything added since (employees, integrations) gets backfilled.
+    await seedEmployeesAndIntegrations(companyId);
+    return;
+  }
 
   await pool.query(
     "INSERT INTO companies (id, name, employee_count, pay_schedule) VALUES ($1, $2, $3, $4)",
@@ -273,6 +314,96 @@ async function seed(): Promise<void> {
       recs[i],
       i,
     ]);
+  }
+
+  await seedEmployeesAndIntegrations(companyId);
+}
+
+function emailFor(name: string): string {
+  const local = name
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .trim()
+    .split(/\s+/)
+    .join(".");
+  return `${local}@harrowvale.co.uk`;
+}
+
+/** Seeds the employees and integrations tables if they're empty for this company — safe to call whether the base seed just ran or ran in an earlier deploy. */
+async function seedEmployeesAndIntegrations(companyId: string): Promise<void> {
+  const pool = getPool();
+
+  const existingEmployees = await pool.query("SELECT id FROM employees WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (!existingEmployees.rowCount) {
+    const roster: Array<{
+      name: string;
+      role: string;
+      employmentType: string;
+      weeklyHours: number;
+      startDate: string;
+      taxCode: string;
+      niNumber: string;
+    }> = [
+      { name: "Jack Whitmore", role: "Lettings Coordinator", employmentType: "Full-time", weeklyHours: 37.5, startDate: "3 Apr 2023", taxCode: "1257L W1", niNumber: "QQ 12 34 56 A" },
+      { name: "Layla Bennett", role: "Junior Negotiator", employmentType: "Full-time", weeklyHours: 37.5, startDate: "14 Aug 2024", taxCode: "1257L", niNumber: "QQ 12 34 57 B" },
+      { name: "Ronke Okafor", role: "Sales Associate", employmentType: "Full-time", weeklyHours: 37.5, startDate: "22 Jan 2022", taxCode: "1257L", niNumber: "QQ 12 34 58 C" },
+      { name: "Marcus Chen", role: "Senior Broker", employmentType: "Full-time", weeklyHours: 37.5, startDate: "9 Jun 2019", taxCode: "1257L", niNumber: "QQ 12 34 59 D" },
+      { name: "Priya Anand", role: "Office Manager", employmentType: "Full-time", weeklyHours: 37.5, startDate: "1 Mar 2018", taxCode: "1257L", niNumber: "QQ 12 34 60 E" },
+      { name: "Tomasz Nowak", role: "Senior Broker", employmentType: "Full-time", weeklyHours: 37.5, startDate: "17 Oct 2020", taxCode: "1257L", niNumber: "QQ 12 34 61 F" },
+      { name: "Grace Adeyemi", role: "Property Manager", employmentType: "Full-time", weeklyHours: 37.5, startDate: "5 Feb 2021", taxCode: "1257L", niNumber: "QQ 12 34 62 G" },
+      { name: "Sam O'Rourke", role: "Negotiator", employmentType: "Full-time", weeklyHours: 37.5, startDate: "11 Nov 2023", taxCode: "1257L", niNumber: "QQ 12 34 63 H" },
+      { name: "Farah Hussain", role: "Marketing Lead", employmentType: "Full-time", weeklyHours: 37.5, startDate: "3 Jul 2022", taxCode: "1257L", niNumber: "QQ 12 34 64 I" },
+      { name: "Ben Coates", role: "Viewings Coordinator", employmentType: "Full-time", weeklyHours: 37.5, startDate: "20 Sep 2024", taxCode: "1257L", niNumber: "QQ 12 34 65 J" },
+      { name: "Tariq Ahmed", role: "Negotiator", employmentType: "Full-time", weeklyHours: 37.5, startDate: "8 May 2021", taxCode: "1257L", niNumber: "QQ 12 34 66 K" },
+      { name: "Hannah Fischer", role: "Compliance Officer", employmentType: "Full-time", weeklyHours: 37.5, startDate: "16 Jan 2020", taxCode: "1257L", niNumber: "QQ 12 34 67 L" },
+      { name: "Owen Blake", role: "Maintenance Lead", employmentType: "Full-time", weeklyHours: 37.5, startDate: "29 Mar 2019", taxCode: "1257L", niNumber: "QQ 12 34 68 M" },
+      { name: "Nadia Petrov", role: "Accounts Assistant", employmentType: "Part-time", weeklyHours: 22.5, startDate: "12 Dec 2023", taxCode: "1257L", niNumber: "QQ 12 34 69 N" },
+      { name: "Callum Reid", role: "Junior Negotiator", employmentType: "Part-time", weeklyHours: 22.5, startDate: "6 Jun 2025", taxCode: "1257L", niNumber: "QQ 12 34 70 O" },
+    ];
+
+    const idByName = new Map<string, string>();
+    for (let i = 0; i < roster.length; i++) {
+      const e = roster[i];
+      const id = randomUUID();
+      idByName.set(e.name, id);
+      await pool.query(
+        `INSERT INTO employees (id, company_id, name, role, email, employment_type, start_date, tax_code, ni_number, weekly_hours, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [id, companyId, e.name, e.role, emailFor(e.name), e.employmentType, e.startDate, e.taxCode, e.niNumber, e.weeklyHours, i]
+      );
+    }
+
+    // Backfill employee_id on whatever payroll_lines already exist for this company, matched by name.
+    const runs = await pool.query("SELECT id FROM payroll_runs WHERE company_id = $1", [companyId]);
+    for (const run of runs.rows) {
+      for (const [name, employeeId] of idByName) {
+        await pool.query("UPDATE payroll_lines SET employee_id = $1 WHERE run_id = $2 AND employee_name = $3", [
+          employeeId,
+          run.id,
+          name,
+        ]);
+      }
+    }
+  }
+
+  const existingIntegrations = await pool.query("SELECT id FROM integrations WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (!existingIntegrations.rowCount) {
+    const integrations: Array<{ id: string; name: string; category: string; description: string; status: string; lastSyncedAt: string | null }> = [
+      { id: "rotacloud", name: "RotaCloud", category: "Time & attendance", description: "Auto-maps rota exports into payroll hours every cycle.", status: "connected", lastSyncedAt: "Today, 06:12" },
+      { id: "timetastic", name: "Timetastic", category: "Leave management", description: "Syncs approved leave so payroll reflects unpaid/statutory days automatically.", status: "not_connected", lastSyncedAt: null },
+      { id: "openbanking", name: "Open Banking feed", category: "Bank & payments", description: "Reconciles BACS payments and expense receipts against the connected account.", status: "connected", lastSyncedAt: "Today, 05:47" },
+      { id: "hmrc", name: "HMRC Government Gateway", category: "Compliance", description: "Direct RTI (FPS/EPS) submission on every payroll run.", status: "connected", lastSyncedAt: "27 Aug, 09:02" },
+      { id: "nest", name: "NEST Pension", category: "Compliance", description: "Auto-enrolment and contribution submission for eligible employees.", status: "connected", lastSyncedAt: "27 Aug, 09:04" },
+      { id: "xero", name: "Xero", category: "Accounting", description: "Posts payroll journals to your general ledger after each approved run.", status: "not_connected", lastSyncedAt: null },
+    ];
+    for (let i = 0; i < integrations.length; i++) {
+      const ig = integrations[i];
+      await pool.query(
+        `INSERT INTO integrations (id, company_id, name, category, description, status, last_synced_at, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [ig.id, companyId, ig.name, ig.category, ig.description, ig.status, ig.lastSyncedAt, i]
+      );
+    }
   }
 }
 

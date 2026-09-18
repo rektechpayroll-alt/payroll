@@ -5,6 +5,7 @@ const COMPANY_ID = "harrow-vale";
 
 export type PayrollLine = {
   id: string;
+  employee_id: string | null;
   employee_name: string;
   role: string;
   net_pay: number;
@@ -14,6 +15,41 @@ export type PayrollLine = {
   reason: string | null;
   delta_pct: number | null;
   resolved: number;
+};
+
+export type Employee = {
+  id: string;
+  company_id: string;
+  name: string;
+  role: string;
+  email: string;
+  employment_type: string;
+  start_date: string;
+  tax_code: string;
+  ni_number: string;
+  weekly_hours: number;
+  sort_order: number;
+};
+
+export type Integration = {
+  id: string;
+  company_id: string;
+  name: string;
+  category: string;
+  description: string;
+  status: "connected" | "not_connected";
+  last_synced_at: string | null;
+  sort_order: number;
+};
+
+export type Company = {
+  id: string;
+  name: string;
+  employee_count: number;
+  pay_schedule: string;
+  notify_on_flag: boolean;
+  notify_on_approval: boolean;
+  approval_mode: "manual" | "hybrid";
 };
 
 export type PayrollRun = {
@@ -32,11 +68,29 @@ export type PayrollRun = {
   mid_month_note: string | null;
 };
 
-export async function getCompany() {
+export async function getCompany(): Promise<Company> {
   await ready();
   const pool = getPool();
   const { rows } = await pool.query("SELECT * FROM companies WHERE id = $1", [COMPANY_ID]);
-  return rows[0] as { id: string; name: string; employee_count: number; pay_schedule: string };
+  return rows[0] as Company;
+}
+
+export async function updateCompanySettings(input: {
+  pay_schedule: string;
+  notify_on_flag: boolean;
+  notify_on_approval: boolean;
+  approval_mode: "manual" | "hybrid";
+}): Promise<Company> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE companies
+     SET pay_schedule = $1, notify_on_flag = $2, notify_on_approval = $3, approval_mode = $4
+     WHERE id = $5
+     RETURNING *`,
+    [input.pay_schedule, input.notify_on_flag, input.notify_on_approval, input.approval_mode, COMPANY_ID]
+  );
+  return rows[0] as Company;
 }
 
 export async function getCurrentRun(): Promise<PayrollRun> {
@@ -163,4 +217,60 @@ export async function getRecommendations() {
     [COMPANY_ID]
   );
   return rows as { body: string }[];
+}
+
+export async function getEmployees(): Promise<Employee[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM employees WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as Employee[];
+}
+
+export async function getEmployeeById(id: string): Promise<Employee | null> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [id, COMPANY_ID]);
+  return (rows[0] as Employee) ?? null;
+}
+
+/** The employee's line on the current (most recent) payroll run, if one exists. */
+export async function getCurrentLineForEmployee(employeeId: string): Promise<PayrollLine | null> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT pl.* FROM payroll_lines pl
+     JOIN payroll_runs pr ON pr.id = pl.run_id
+     WHERE pl.employee_id = $1 AND pr.company_id = $2
+     ORDER BY pr.created_at DESC LIMIT 1`,
+    [employeeId, COMPANY_ID]
+  );
+  return (rows[0] as PayrollLine) ?? null;
+}
+
+export async function getIntegrations(): Promise<Integration[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM integrations WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as Integration[];
+}
+
+export async function toggleIntegration(id: string): Promise<Integration> {
+  await ready();
+  const pool = getPool();
+  const nowLabel = "Just now";
+  const { rows } = await pool.query(
+    `UPDATE integrations
+     SET status = CASE WHEN status = 'connected' THEN 'not_connected' ELSE 'connected' END,
+         last_synced_at = CASE WHEN status = 'connected' THEN last_synced_at ELSE $2 END
+     WHERE id = $1 AND company_id = $3
+     RETURNING *`,
+    [id, nowLabel, COMPANY_ID]
+  );
+  return rows[0] as Integration;
 }

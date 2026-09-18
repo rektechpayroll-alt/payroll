@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" }) {
+function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8 } as const;
   switch (name) {
     case "grid":
@@ -50,12 +50,20 @@ function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" 
           <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.7 7.7 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.7 7.7 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.7 7.7 0 0 0 2.6-1.5l2.3.8 2-3.4Z" />
         </svg>
       );
+    case "flask":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M9 3h6M10 3v6l-5.5 9.5a1.5 1.5 0 0 0 1.3 2.5h12.4a1.5 1.5 0 0 0 1.3-2.5L14 9V3" />
+          <path d="M6.5 15.5h11" />
+        </svg>
+      );
   }
 }
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" as const, badge: true },
   { href: "/dashboard/profitability", label: "Profitability", icon: "trend" as const },
+  { href: "/dashboard/simulator", label: "Simulator", icon: "flask" as const },
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
   { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },
   { href: "/dashboard/integrations", label: "Integrations", icon: "card" as const },
@@ -99,7 +107,7 @@ export function Sidebar({
           Workspace
         </div>
         {NAV.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
           return (
             <Link
               key={item.href}
