@@ -177,6 +177,7 @@ async function seed(): Promise<void> {
     // sure anything added since (employees, integrations) gets backfilled.
     await seedEmployeesAndIntegrations(companyId);
     await seedCloseTasks(companyId);
+    await seedPriorRun(companyId);
     return;
   }
 
@@ -335,6 +336,7 @@ async function seed(): Promise<void> {
 
   await seedEmployeesAndIntegrations(companyId);
   await seedCloseTasks(companyId);
+  await seedPriorRun(companyId);
 }
 
 function emailFor(name: string): string {
@@ -447,6 +449,87 @@ async function seedCloseTasks(companyId: string): Promise<void> {
     await pool.query(
       `INSERT INTO close_tasks (id, company_id, label, done, sort_order) VALUES ($1, $2, $3, $4, $5)`,
       [randomUUID(), companyId, CLOSE_TASK_LABELS[i], done, i]
+    );
+  }
+}
+
+/**
+ * Net pay each employee actually took home on the prior (August 2026, already-approved)
+ * run. Hand-set, not randomised, and deliberately identical to the September figure for
+ * anyone with no real story this period — real payroll doesn't drift by a few pounds for
+ * no reason, and the diff view is only useful if "unchanged" actually means unchanged.
+ * The few employees who do differ tie back to a specific cause: Ronke Okafor's Plan 2
+ * threshold crossing, Layla Bennett's new uniform deduction, and Marcus Chen/Tomasz
+ * Nowak's commission swings (both Senior Brokers, so month-to-month variance is expected).
+ * Jack Whitmore's pay is unchanged — his September exception is about his bank details
+ * failing validation, not his pay — which is exactly the case the diff view needs to
+ * handle: a flag can appear with zero pay delta.
+ */
+const PRIOR_RUN_NET_PAY: Record<string, number> = {
+  "Jack Whitmore": 1842.3,
+  "Layla Bennett": 1703.44,
+  "Ronke Okafor": 2566.95,
+  "Marcus Chen": 5120.0,
+  "Priya Anand": 2214.6,
+  "Tomasz Nowak": 3742.8,
+  "Grace Adeyemi": 2540.32,
+  "Sam O'Rourke": 2190.18,
+  "Farah Hussain": 2760.9,
+  "Ben Coates": 1932.44,
+  "Tariq Ahmed": 2405.7,
+  "Hannah Fischer": 2875.0,
+  "Owen Blake": 2108.6,
+  "Nadia Petrov": 2050.15,
+  "Callum Reid": 1876.2,
+};
+
+/**
+ * Seeds a prior, already-approved payroll run (and its per-employee lines) so the
+ * run-diff/audit view (pillar T) has real history to compare the current run against
+ * instead of a single-run demo. Safe to call on every request — only inserts once the
+ * company has fewer than two runs, and only once employees exist to attach lines to.
+ */
+async function seedPriorRun(companyId: string): Promise<void> {
+  const pool = getPool();
+  const { rows: runCountRows } = await pool.query("SELECT COUNT(*) as n FROM payroll_runs WHERE company_id = $1", [
+    companyId,
+  ]);
+  if (Number(runCountRows[0]?.n ?? 0) >= 2) return;
+
+  const { rows: employees } = await pool.query(
+    "SELECT id, name, role FROM employees WHERE company_id = $1 ORDER BY sort_order ASC",
+    [companyId]
+  );
+  if (!employees.length) return; // employees haven't been seeded yet this pass — will backfill next request
+
+  const runId = randomUUID();
+  await pool.query(
+    `INSERT INTO payroll_runs
+      (id, company_id, period_label, pay_period, payday, bacs_cutoff_label, status, gross_pay, employer_ni, employer_pension, net_pay, connected_balance, mid_month_note, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, '2026-08-27T16:42:00Z')`,
+    [
+      runId,
+      companyId,
+      "August 2026 payroll",
+      "1–31 Aug",
+      "Thu 27 Aug",
+      "0d",
+      72860.1,
+      5980.4,
+      2815.2,
+      56826.3,
+      74200.0,
+      null,
+    ]
+  );
+
+  for (let i = 0; i < employees.length; i++) {
+    const e = employees[i] as { id: string; name: string; role: string };
+    const net = PRIOR_RUN_NET_PAY[e.name] ?? 2200;
+    await pool.query(
+      `INSERT INTO payroll_lines (id, run_id, employee_id, employee_name, role, net_pay, severity, source, tag_label, reason, delta_pct, resolved, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, 0, $7)`,
+      [randomUUID(), runId, e.id, e.name, e.role, net, i]
     );
   }
 }

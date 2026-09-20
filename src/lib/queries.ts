@@ -161,6 +161,67 @@ export async function approveRun(runId: string) {
   return { status, blockingCount: blocking.length, includedCount: included.length, total: lines.length };
 }
 
+/** The most recently created run for this company that predates `beforeRunId` — the "previous" run for the diff view. */
+export async function getPreviousRun(beforeRunId: string): Promise<PayrollRun | null> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT pr.* FROM payroll_runs pr
+     WHERE pr.company_id = $1
+       AND pr.created_at < (SELECT created_at FROM payroll_runs WHERE id = $2)
+     ORDER BY pr.created_at DESC LIMIT 1`,
+    [COMPANY_ID, beforeRunId]
+  );
+  return (rows[0] as PayrollRun) ?? null;
+}
+
+export type RunDiffRow = {
+  employee_id: string | null;
+  employee_name: string;
+  role: string;
+  current_net: number | null;
+  previous_net: number | null;
+  current_severity: "critical" | "serious" | "warning" | null;
+  current_tag: string | null;
+  current_reason: string | null;
+  previous_severity: "critical" | "serious" | "warning" | null;
+  previous_tag: string | null;
+};
+
+/**
+ * Employee-by-employee comparison between two runs — a FULL OUTER JOIN on employee_id so
+ * starters (no previous line) and leavers (no current line) both come through, alongside
+ * everyone whose pay or flag status changed (or didn't). Classification into
+ * new/left/changed/unchanged happens in lib/rundiff.ts, kept separate from this raw fetch.
+ */
+export async function getRunDiff(currentRunId: string, previousRunId: string): Promise<RunDiffRow[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `WITH cur AS (
+       SELECT * FROM payroll_lines WHERE run_id = $1
+     ), prev AS (
+       SELECT * FROM payroll_lines WHERE run_id = $2
+     )
+     SELECT
+       COALESCE(cur.employee_id, prev.employee_id) AS employee_id,
+       COALESCE(cur.employee_name, prev.employee_name) AS employee_name,
+       COALESCE(cur.role, prev.role) AS role,
+       cur.net_pay AS current_net,
+       prev.net_pay AS previous_net,
+       cur.severity AS current_severity,
+       cur.tag_label AS current_tag,
+       cur.reason AS current_reason,
+       prev.severity AS previous_severity,
+       prev.tag_label AS previous_tag
+     FROM cur
+     FULL OUTER JOIN prev ON cur.employee_id = prev.employee_id
+     ORDER BY COALESCE(cur.sort_order, prev.sort_order) ASC, employee_name ASC`,
+    [currentRunId, previousRunId]
+  );
+  return rows as RunDiffRow[];
+}
+
 export async function getAuditLog(limit = 6) {
   await ready();
   const pool = getPool();

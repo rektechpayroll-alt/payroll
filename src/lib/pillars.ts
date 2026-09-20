@@ -104,6 +104,14 @@ export const PILLARS: Pillar[] = [
     group: "See around corners",
   },
   {
+    letter: "T",
+    title: "Payroll run diff/audit view",
+    summary: "A git-style diff between consecutive runs — exactly what changed per employee, and why.",
+    detail:
+      "Every run is compared employee-by-employee against the one before it: who joined, who left, whose pay moved and by how much, and which compliance flags appeared or cleared since last time — instead of a flat report someone has to compare by eye. Live on /dashboard/runs/diff, built from real payroll_runs and payroll_lines history rather than a mockup.",
+    group: "See around corners",
+  },
+  {
     letter: "K",
     title: "Multi-entity consolidation",
     summary: "One parent view across subsidiaries, business units or payroll entities.",
