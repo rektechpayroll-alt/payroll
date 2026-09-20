@@ -154,6 +154,48 @@ async function createSchema(): Promise<void> {
       done INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      invoice_number TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT,
+      issue_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      subtotal DOUBLE PRECISION NOT NULL,
+      vat_rate DOUBLE PRECISION NOT NULL DEFAULT 20,
+      vat_amount DOUBLE PRECISION NOT NULL,
+      total DOUBLE PRECISION NOT NULL,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_items (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity DOUBLE PRECISION NOT NULL DEFAULT 1,
+      unit_price DOUBLE PRECISION NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS bank_transactions (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      txn_date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      direction TEXT NOT NULL,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'unmatched',
+      matched_invoice_id TEXT REFERENCES invoices(id),
+      matched_payroll_run_id TEXT REFERENCES payroll_runs(id),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // Additive migrations for databases created before this schema revision —
@@ -178,6 +220,7 @@ async function seed(): Promise<void> {
     await seedEmployeesAndIntegrations(companyId);
     await seedCloseTasks(companyId);
     await seedPriorRun(companyId);
+    await seedLedger(companyId);
     return;
   }
 
@@ -337,6 +380,7 @@ async function seed(): Promise<void> {
   await seedEmployeesAndIntegrations(companyId);
   await seedCloseTasks(companyId);
   await seedPriorRun(companyId);
+  await seedLedger(companyId);
 }
 
 function emailFor(name: string): string {
@@ -564,6 +608,195 @@ async function seedOnboardingTasks(companyId: string): Promise<void> {
         [randomUUID(), emp.id, ONBOARDING_TASK_LABELS[i], done, i]
       );
     }
+  }
+}
+
+/**
+ * Seeds Verity Ledger's demo data — a handful of sales invoices Harrow & Vale has raised
+ * against landlord clients, and the connected bank feed those invoices get reconciled
+ * against. Safe to call on every request — only inserts once, and only once a payroll run
+ * exists to link the BACS debit line to (so the seeded feed shows the payroll run-diff
+ * feature and Verity Ledger sharing the same underlying bank connection, not two disjoint
+ * demos).
+ */
+async function seedLedger(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM invoices WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const { rows: runRows } = await pool.query(
+    "SELECT id FROM payroll_runs WHERE company_id = $1 ORDER BY created_at ASC LIMIT 1",
+    [companyId]
+  );
+  const augustRunId = (runRows[0]?.id as string | undefined) ?? null;
+  if (!augustRunId) return; // payroll history hasn't been seeded yet this pass — will backfill next request
+
+  type SeedInvoice = {
+    number: string;
+    customerName: string;
+    customerEmail: string;
+    issueDate: string;
+    dueDate: string;
+    status: "draft" | "sent" | "paid";
+    items: Array<{ description: string; quantity: number; unitPrice: number }>;
+  };
+
+  const invoices: SeedInvoice[] = [
+    {
+      number: "INV-1041",
+      customerName: "Bellcourt Estates Ltd",
+      customerEmail: "accounts@bellcourtestates.co.uk",
+      issueDate: "1 Sep 2026",
+      dueDate: "15 Sep 2026",
+      status: "paid",
+      items: [{ description: "Property management fee — September", quantity: 1, unitPrice: 3200.0 }],
+    },
+    {
+      number: "INV-1042",
+      customerName: "Kestrel Holdings",
+      customerEmail: "finance@kestrelholdings.com",
+      issueDate: "3 Sep 2026",
+      dueDate: "17 Sep 2026",
+      status: "sent",
+      items: [{ description: "Letting fee — 14 Riverside Quarter", quantity: 1, unitPrice: 1850.0 }],
+    },
+    {
+      number: "INV-1043",
+      customerName: "Marlow & Co",
+      customerEmail: "ap@marlowandco.co.uk",
+      issueDate: "5 Sep 2026",
+      dueDate: "10 Sep 2026", // already past — renders as overdue
+      status: "sent",
+      items: [{ description: "Quarterly inspection — 3 units", quantity: 3, unitPrice: 150.0 }],
+    },
+    {
+      number: "INV-1044",
+      customerName: "Thornfield Residential",
+      customerEmail: "accounts@thornfieldresidential.co.uk",
+      issueDate: "8 Sep 2026",
+      dueDate: "22 Sep 2026",
+      status: "draft",
+      items: [{ description: "Property management fee — September", quantity: 1, unitPrice: 2100.0 }],
+    },
+    {
+      number: "INV-1045",
+      customerName: "Bellcourt Estates Ltd",
+      customerEmail: "accounts@bellcourtestates.co.uk",
+      issueDate: "10 Sep 2026",
+      dueDate: "24 Sep 2026",
+      status: "sent",
+      items: [{ description: "Additional inspection — out of cycle", quantity: 1, unitPrice: 300.0 }],
+    },
+  ];
+
+  const invoiceIdByNumber = new Map<string, string>();
+  for (let i = 0; i < invoices.length; i++) {
+    const inv = invoices[i];
+    const subtotal = inv.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+    const vatRate = 20;
+    const vatAmount = Math.round(subtotal * (vatRate / 100) * 100) / 100;
+    const total = Math.round((subtotal + vatAmount) * 100) / 100;
+    const invoiceId = randomUUID();
+    invoiceIdByNumber.set(inv.number, invoiceId);
+
+    await pool.query(
+      `INSERT INTO invoices (id, company_id, invoice_number, customer_name, customer_email, issue_date, due_date, status, subtotal, vat_rate, vat_amount, total, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [invoiceId, companyId, inv.number, inv.customerName, inv.customerEmail, inv.issueDate, inv.dueDate, inv.status, subtotal, vatRate, vatAmount, total, i]
+    );
+
+    for (let j = 0; j < inv.items.length; j++) {
+      const it = inv.items[j];
+      await pool.query(
+        `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [randomUUID(), invoiceId, it.description, it.quantity, it.unitPrice, it.quantity * it.unitPrice, j]
+      );
+    }
+  }
+
+  const paidInvoiceId = invoiceIdByNumber.get("INV-1041")!;
+
+  type SeedTxn = {
+    date: string;
+    description: string;
+    amount: number;
+    direction: "credit" | "debit";
+    category: string | null;
+    status: "matched" | "unmatched";
+    matchedInvoiceId: string | null;
+    matchedPayrollRunId: string | null;
+  };
+
+  const transactions: SeedTxn[] = [
+    {
+      date: "27 Aug 2026",
+      description: "BACS PAYROLL RUN — AUG 2026",
+      amount: 56826.3,
+      direction: "debit",
+      category: "Payroll (BACS)",
+      status: "matched",
+      matchedInvoiceId: null,
+      matchedPayrollRunId: augustRunId,
+    },
+    {
+      date: "1 Sep 2026",
+      description: "OFFICE RENT — HARROW HIGH ST",
+      amount: 1450.0,
+      direction: "debit",
+      category: "Rent",
+      status: "unmatched",
+      matchedInvoiceId: null,
+      matchedPayrollRunId: null,
+    },
+    {
+      date: "2 Sep 2026",
+      description: "FASTER PAYMENT — BELLCOURT ESTATES LTD",
+      amount: 3840.0,
+      direction: "credit",
+      category: null,
+      status: "matched",
+      matchedInvoiceId: paidInvoiceId,
+      matchedPayrollRunId: null,
+    },
+    {
+      date: "5 Sep 2026",
+      description: "ADOBE CREATIVE CLOUD",
+      amount: 89.0,
+      direction: "debit",
+      category: "Software",
+      status: "unmatched",
+      matchedInvoiceId: null,
+      matchedPayrollRunId: null,
+    },
+    {
+      date: "12 Sep 2026",
+      description: "FASTER PAYMENT — KESTREL HOLDINGS",
+      amount: 2220.0,
+      direction: "credit",
+      category: null,
+      status: "unmatched",
+      matchedInvoiceId: null,
+      matchedPayrollRunId: null,
+    },
+    {
+      date: "15 Sep 2026",
+      description: "TFL / FUEL",
+      amount: 412.5,
+      direction: "debit",
+      category: "Travel & subsistence",
+      status: "unmatched",
+      matchedInvoiceId: null,
+      matchedPayrollRunId: null,
+    },
+  ];
+
+  for (let i = 0; i < transactions.length; i++) {
+    const t = transactions[i];
+    await pool.query(
+      `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_invoice_id, matched_payroll_run_id, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [randomUUID(), companyId, t.date, t.description, t.amount, t.direction, t.category, t.status, t.matchedInvoiceId, t.matchedPayrollRunId, i]
+    );
   }
 }
 

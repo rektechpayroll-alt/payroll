@@ -177,10 +177,18 @@ export const PILLARS: Pillar[] = [
   },
   {
     letter: "S2",
-    title: "Connected accounting ledger",
-    summary: "Post approved payroll runs straight to a general ledger — invoicing, bank reconciliation and VAT/MTD, in one place with payroll. On the roadmap.",
+    title: "Verity Ledger — invoicing & bank reconciliation",
+    summary: "Sales invoicing and bank reconciliation, connected to the same Open Banking feed payroll already reconciles against.",
     detail:
-      "Sage and Xero both start from accounting and treat payroll as an add-on; Verity does the opposite today. The next step broadens the other way — a connected ledger, invoicing and Making Tax Digital VAT submission alongside payroll — so a business never has to reconcile two separate systems by hand. This is a directional roadmap item, not a shipped feature in this demo.",
+      "Sage and Xero both start from accounting and treat payroll as an add-on; Verity does the opposite. Verity Ledger is the first real step the other way — raise and send invoices, and reconcile incoming payments against the connected bank feed with a one-click confirm on each suggested match, live and working at /dashboard/ledger rather than a mockup or marketing claim. It's deliberately named as its own product, the way Sage names Accounting and Payroll separately, rather than folded silently into the payroll app.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "U",
+    title: "VAT & Making Tax Digital submission",
+    summary: "Automatic VAT return calculation and direct HMRC MTD submission from Verity Ledger's invoice data. On the roadmap.",
+    detail:
+      "Verity Ledger already has the invoice and VAT-rate data a VAT return needs — what's missing is a real HMRC Making Tax Digital API connection to submit it through, the same bar Verity's RTI/NEST pipeline (pillar G) already clears for payroll. Building that against a live HMRC sandbox is the next step; a VAT calculator without a genuine submission path would be illustrative rather than working, so this stays an explicit roadmap item rather than a shipped feature.",
     group: "Beyond payroll",
   },
   {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" | "diff" }) {
+function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" | "diff" | "ledger" }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8 } as const;
   switch (name) {
     case "grid":
@@ -70,6 +70,13 @@ function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" 
           <path d="M15 20V4M15 20l-4-4M15 20l4-4" />
         </svg>
       );
+    case "ledger":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M6 3h12a1 1 0 0 1 1 1v16.2a.8.8 0 0 1-1.2.7L15 19l-2.5 2-2.5-2-2.5 2-1.8-1.9A.8.8 0 0 1 6 20.2V3Z" />
+          <path d="M9 8h6M9 12h6M9 16h3" />
+        </svg>
+      );
   }
 }
 
@@ -80,6 +87,7 @@ const NAV = [
   { href: "/dashboard/agents", label: "AI Agents", icon: "spark" as const },
   { href: "/dashboard/simulator", label: "Simulator", icon: "flask" as const },
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
+  { href: "/dashboard/ledger", label: "Verity Ledger", icon: "ledger" as const },
   { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },
   { href: "/dashboard/integrations", label: "Integrations", icon: "card" as const },
   { href: "/dashboard/settings", label: "Settings", icon: "gear" as const },

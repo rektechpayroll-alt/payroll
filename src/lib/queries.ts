@@ -390,6 +390,178 @@ export async function getIncompleteOnboardingCount(): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+export type Invoice = {
+  id: string;
+  company_id: string;
+  invoice_number: string;
+  customer_name: string;
+  customer_email: string | null;
+  issue_date: string;
+  due_date: string;
+  status: "draft" | "sent" | "paid" | "void";
+  subtotal: number;
+  vat_rate: number;
+  vat_amount: number;
+  total: number;
+  notes: string | null;
+  sort_order: number;
+};
+
+export type InvoiceItem = {
+  id: string;
+  invoice_id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  amount: number;
+  sort_order: number;
+};
+
+export type BankTransaction = {
+  id: string;
+  company_id: string;
+  txn_date: string;
+  description: string;
+  amount: number;
+  direction: "credit" | "debit";
+  category: string | null;
+  status: "unmatched" | "matched";
+  matched_invoice_id: string | null;
+  matched_payroll_run_id: string | null;
+  sort_order: number;
+};
+
+export async function getInvoices(): Promise<Invoice[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM invoices WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as Invoice[];
+}
+
+export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order ASC",
+    [invoiceId]
+  );
+  return rows as InvoiceItem[];
+}
+
+export type CreateInvoiceInput = {
+  customerName: string;
+  customerEmail: string | null;
+  issueDate: string;
+  dueDate: string;
+  vatRate: number;
+  notes: string | null;
+  items: Array<{ description: string; quantity: number; unitPrice: number }>;
+};
+
+/** Creates a draft invoice and its line items, computing subtotal/VAT/total server-side rather than trusting client arithmetic. */
+export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
+  await ready();
+  const pool = getPool();
+
+  const subtotal = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+  const vatAmount = Math.round(subtotal * (input.vatRate / 100) * 100) / 100;
+  const total = Math.round((subtotal + vatAmount) * 100) / 100;
+
+  const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM invoices WHERE company_id = $1", [COMPANY_ID]);
+  const nextNumber = 1041 + Number(countRows[0]?.n ?? 0);
+  const invoiceId = randomUUID();
+
+  await pool.query(
+    `INSERT INTO invoices (id, company_id, invoice_number, customer_name, customer_email, issue_date, due_date, status, subtotal, vat_rate, vat_amount, total, notes, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,$9,$10,$11,$12,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM invoices WHERE company_id = $2))`,
+    [
+      invoiceId,
+      COMPANY_ID,
+      `INV-${nextNumber}`,
+      input.customerName,
+      input.customerEmail,
+      input.issueDate,
+      input.dueDate,
+      subtotal,
+      input.vatRate,
+      vatAmount,
+      total,
+      input.notes,
+    ]
+  );
+
+  for (let i = 0; i < input.items.length; i++) {
+    const it = input.items[i];
+    await pool.query(
+      `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [randomUUID(), invoiceId, it.description, it.quantity, it.unitPrice, it.quantity * it.unitPrice, i]
+    );
+  }
+
+  const { rows } = await pool.query("SELECT * FROM invoices WHERE id = $1", [invoiceId]);
+  return rows[0] as Invoice;
+}
+
+export async function updateInvoiceStatus(id: string, status: Invoice["status"]): Promise<Invoice> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "UPDATE invoices SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *",
+    [status, id, COMPANY_ID]
+  );
+  return rows[0] as Invoice;
+}
+
+export async function getBankTransactions(): Promise<BankTransaction[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM bank_transactions WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as BankTransaction[];
+}
+
+/** Confirms a suggested (or manually chosen) match between a bank credit and an open invoice — marks both sides matched/paid in one step, the way a reconciliation screen actually works. */
+export async function matchTransaction(
+  transactionId: string,
+  invoiceId: string
+): Promise<{ transaction: BankTransaction; invoice: Invoice }> {
+  await ready();
+  const pool = getPool();
+  const { rows: txnRows } = await pool.query(
+    `UPDATE bank_transactions SET status = 'matched', matched_invoice_id = $1 WHERE id = $2 AND company_id = $3 RETURNING *`,
+    [invoiceId, transactionId, COMPANY_ID]
+  );
+  const { rows: invRows } = await pool.query(
+    `UPDATE invoices SET status = 'paid' WHERE id = $1 AND company_id = $2 RETURNING *`,
+    [invoiceId, COMPANY_ID]
+  );
+  return { transaction: txnRows[0] as BankTransaction, invoice: invRows[0] as Invoice };
+}
+
+/** Undoes a match — puts the invoice back to "sent" and the transaction back to unmatched, in case a reviewer matched the wrong pair. */
+export async function unmatchTransaction(transactionId: string): Promise<BankTransaction> {
+  await ready();
+  const pool = getPool();
+  const { rows: existingRows } = await pool.query(
+    "SELECT matched_invoice_id FROM bank_transactions WHERE id = $1 AND company_id = $2",
+    [transactionId, COMPANY_ID]
+  );
+  const invoiceId = existingRows[0]?.matched_invoice_id as string | undefined;
+  const { rows } = await pool.query(
+    `UPDATE bank_transactions SET status = 'unmatched', matched_invoice_id = NULL WHERE id = $1 AND company_id = $2 RETURNING *`,
+    [transactionId, COMPANY_ID]
+  );
+  if (invoiceId) {
+    await pool.query(`UPDATE invoices SET status = 'sent' WHERE id = $1 AND company_id = $2`, [invoiceId, COMPANY_ID]);
+  }
+  return rows[0] as BankTransaction;
+}
+
 export async function toggleIntegration(id: string): Promise<Integration> {
   await ready();
   const pool = getPool();
