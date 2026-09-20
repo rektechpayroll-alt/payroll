@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { gbp } from "@/lib/format";
-import { getEmployeeById, getCurrentLineForEmployee } from "@/lib/queries";
+import { getEmployeeById, getCurrentLineForEmployee, getOnboardingTasks } from "@/lib/queries";
 import { nmwCheck, statutoryEligibility } from "@/lib/compliance";
 import { PayslipExplainer } from "@/components/PayslipExplainer";
+import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
   const line = await getCurrentLineForEmployee(id);
   const statutory = statutoryEligibility(employee);
   const nmw = line ? nmwCheck(employee, line) : null;
+  const onboardingTasks = await getOnboardingTasks(id);
 
   return (
     <div>
@@ -144,6 +146,10 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
             </div>
           </div>
         </section>
+      </div>
+
+      <div className="mt-[18px]">
+        <OnboardingChecklist initialTasks={onboardingTasks} />
       </div>
 
       <div className="mt-[18px]">

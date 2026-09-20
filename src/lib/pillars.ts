@@ -10,7 +10,8 @@ export type Pillar = {
     | "Compliance that keeps up"
     | "See around corners"
     | "Built to scale"
-    | "Built for the workforce, not just HR";
+    | "Built for the workforce, not just HR"
+    | "Beyond payroll";
 };
 
 export const PILLARS: Pillar[] = [
@@ -20,6 +21,14 @@ export const PILLARS: Pillar[] = [
     summary: "A deterministic calculation engine, backed by an AI anomaly detector — not a bolted-on chatbot.",
     detail:
       "The payroll calculation itself stays fully deterministic. Sitting behind it, an AI anomaly detector reviews every run and categorises each flagged item both by where it came from (bank & payments, compliance, tax & statutory, commission & variable pay) and by which specific rule was possibly broken — so the reviewer isn't left guessing why something was flagged.",
+    group: "Catch it before payday",
+  },
+  {
+    letter: "S",
+    title: "Task-specific AI agents — Compliance, Reconciliation & Close",
+    summary: "Verity's answer to Sage Copilot: three working agents scoped to real payroll tasks, not a general chatbot.",
+    detail:
+      "A Compliance Agent sweeps every employee for NMW and statutory-leave exceptions in one pass; a Reconciliation Agent groups every flagged line on the current run by category so a reviewer sees the shape of the problem; a Close Agent tracks the standing month-end checklist so a run is never signed off half-done. All three run against this account's real Postgres data on /dashboard/agents — they're a working feature, not a mockup.",
     group: "Catch it before payday",
   },
   {
@@ -131,7 +140,7 @@ export const PILLARS: Pillar[] = [
     title: "Digital contracts & e-signature onboarding",
     summary: "New starters sign their contract inside Verity — no separate HR tool for day one.",
     detail:
-      "PayFit and HiBob both build contract creation, amendment and e-signing into their platform, and it's a genuine gap in Verity's current build. A new starter's signed contract, tax code and bank details flow straight into their first payroll run instead of arriving as a PDF someone has to re-key.",
+      "PayFit and HiBob both build contract creation, amendment and e-signing into their platform. Verity now ships the working half of this — a real, per-employee digital onboarding checklist (contract signed, right-to-work check, bank details, tax code) on every employee's record — with e-signature capture itself still on the roadmap.",
     group: "One shared source of truth",
   },
   {
@@ -157,5 +166,21 @@ export const PILLARS: Pillar[] = [
     detail:
       "UK employers with 250+ employees must publish Gender Pay Gap figures annually — a real, legally-mandated reporting burden that none of the six competitors reviewed surface prominently on their own site. Verity generates it directly from real payroll data instead of a spreadsheet exercise someone in HR redoes from scratch every year.",
     group: "Compliance that keeps up",
+  },
+  {
+    letter: "S2",
+    title: "Connected accounting ledger",
+    summary: "Post approved payroll runs straight to a general ledger — invoicing, bank reconciliation and VAT/MTD, in one place with payroll. On the roadmap.",
+    detail:
+      "Sage and Xero both start from accounting and treat payroll as an add-on; Verity does the opposite today. The next step broadens the other way — a connected ledger, invoicing and Making Tax Digital VAT submission alongside payroll — so a business never has to reconcile two separate systems by hand. This is a directional roadmap item, not a shipped feature in this demo.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "S3",
+    title: "Full HR suite",
+    summary: "Org charts, a hiring pipeline, performance reviews and benefits administration alongside payroll and onboarding. On the roadmap.",
+    detail:
+      "The digital onboarding checklist (pillar O) is real and working today. The fuller HR layer competitors like HiBob and PayFit ship — org charts, applicant tracking, performance reviews, benefits administration — is the next planned extension, so Verity can be a single system of record for the whole employee lifecycle, not just the payroll run.",
+    group: "Beyond payroll",
   },
 ];

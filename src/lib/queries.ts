@@ -260,6 +260,75 @@ export async function getIntegrations(): Promise<Integration[]> {
   return rows as Integration[];
 }
 
+export type CloseTask = {
+  id: string;
+  company_id: string;
+  label: string;
+  done: number;
+  sort_order: number;
+};
+
+export async function getCloseTasks(): Promise<CloseTask[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM close_tasks WHERE company_id = $1 ORDER BY sort_order ASC",
+    [COMPANY_ID]
+  );
+  return rows as CloseTask[];
+}
+
+export async function toggleCloseTask(id: string): Promise<CloseTask> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE close_tasks SET done = CASE WHEN done = 1 THEN 0 ELSE 1 END WHERE id = $1 AND company_id = $2 RETURNING *`,
+    [id, COMPANY_ID]
+  );
+  return rows[0] as CloseTask;
+}
+
+export type OnboardingTask = {
+  id: string;
+  employee_id: string;
+  label: string;
+  done: number;
+  sort_order: number;
+};
+
+export async function getOnboardingTasks(employeeId: string): Promise<OnboardingTask[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    "SELECT * FROM onboarding_tasks WHERE employee_id = $1 ORDER BY sort_order ASC",
+    [employeeId]
+  );
+  return rows as OnboardingTask[];
+}
+
+export async function toggleOnboardingTask(id: string): Promise<OnboardingTask> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE onboarding_tasks SET done = CASE WHEN done = 1 THEN 0 ELSE 1 END WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return rows[0] as OnboardingTask;
+}
+
+/** All employees whose onboarding checklist isn't fully complete yet — used by the Compliance/Close agents and the HR summary. */
+export async function getIncompleteOnboardingCount(): Promise<number> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT COUNT(DISTINCT ot.employee_id) as n FROM onboarding_tasks ot
+     JOIN employees e ON e.id = ot.employee_id
+     WHERE e.company_id = $1 AND ot.done = 0`,
+    [COMPANY_ID]
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function toggleIntegration(id: string): Promise<Integration> {
   await ready();
   const pool = getPool();

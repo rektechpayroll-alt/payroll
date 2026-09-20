@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" }) {
+function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8 } as const;
   switch (name) {
     case "grid":
@@ -57,12 +57,19 @@ function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" 
           <path d="M6.5 15.5h11" />
         </svg>
       );
+    case "spark":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2Z" />
+        </svg>
+      );
   }
 }
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" as const, badge: true },
   { href: "/dashboard/profitability", label: "Profitability", icon: "trend" as const },
+  { href: "/dashboard/agents", label: "AI Agents", icon: "spark" as const },
   { href: "/dashboard/simulator", label: "Simulator", icon: "flask" as const },
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
   { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },

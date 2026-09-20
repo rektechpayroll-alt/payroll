@@ -138,6 +138,22 @@ async function createSchema(): Promise<void> {
       last_synced_at TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS close_tasks (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS onboarding_tasks (
+      id TEXT PRIMARY KEY,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // Additive migrations for databases created before this schema revision —
@@ -160,6 +176,7 @@ async function seed(): Promise<void> {
     // Base seed already ran in an earlier version of the schema — still make
     // sure anything added since (employees, integrations) gets backfilled.
     await seedEmployeesAndIntegrations(companyId);
+    await seedCloseTasks(companyId);
     return;
   }
 
@@ -317,6 +334,7 @@ async function seed(): Promise<void> {
   }
 
   await seedEmployeesAndIntegrations(companyId);
+  await seedCloseTasks(companyId);
 }
 
 function emailFor(name: string): string {
@@ -402,6 +420,65 @@ async function seedEmployeesAndIntegrations(companyId: string): Promise<void> {
         `INSERT INTO integrations (id, company_id, name, category, description, status, last_synced_at, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [ig.id, companyId, ig.name, ig.category, ig.description, ig.status, ig.lastSyncedAt, i]
+      );
+    }
+  }
+
+  await seedOnboardingTasks(companyId);
+}
+
+const CLOSE_TASK_LABELS = [
+  "Confirm RTI (FPS) filed for the current period",
+  "Confirm NEST contributions submitted",
+  "Clear all critical and serious flagged lines",
+  "Export payroll register and compliance summary for the accountant",
+  "Reconcile BACS payment file against the connected bank feed",
+];
+
+/** Seeds the month-end close checklist for a company if it doesn't have one yet. */
+async function seedCloseTasks(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM close_tasks WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  for (let i = 0; i < CLOSE_TASK_LABELS.length; i++) {
+    // First two are already done in this seeded demo run; the rest are outstanding.
+    const done = i < 2 ? 1 : 0;
+    await pool.query(
+      `INSERT INTO close_tasks (id, company_id, label, done, sort_order) VALUES ($1, $2, $3, $4, $5)`,
+      [randomUUID(), companyId, CLOSE_TASK_LABELS[i], done, i]
+    );
+  }
+}
+
+const ONBOARDING_TASK_LABELS = ["Contract signed & returned", "Right-to-work check completed", "Bank details verified", "Tax code confirmed with HMRC starter checklist"];
+
+/** Seeds a digital-onboarding checklist per employee if none exist yet (pillar O). Employees who started long enough ago are marked fully onboarded; recent starters are left with outstanding items so the feature has something real to show. */
+async function seedOnboardingTasks(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query(
+    `SELECT ot.id FROM onboarding_tasks ot JOIN employees e ON e.id = ot.employee_id WHERE e.company_id = $1 LIMIT 1`,
+    [companyId]
+  );
+  if (existing.rowCount) return;
+
+  const { rows: employees } = await pool.query(
+    "SELECT id, start_date FROM employees WHERE company_id = $1 ORDER BY sort_order ASC",
+    [companyId]
+  );
+  const referenceDate = new Date("2026-09-15");
+  for (const emp of employees) {
+    const started = new Date(emp.start_date as string);
+    const daysEmployed = Number.isNaN(started.getTime())
+      ? 9999
+      : Math.floor((referenceDate.getTime() - started.getTime()) / (1000 * 60 * 60 * 24));
+    // The two most recently started employees (< 400 days) still have open onboarding items.
+    const fullyOnboarded = daysEmployed >= 400;
+    for (let i = 0; i < ONBOARDING_TASK_LABELS.length; i++) {
+      const done = fullyOnboarded || i === 0 ? 1 : 0;
+      await pool.query(
+        `INSERT INTO onboarding_tasks (id, employee_id, label, done, sort_order) VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), emp.id, ONBOARDING_TASK_LABELS[i], done, i]
       );
     }
   }
