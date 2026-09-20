@@ -9,7 +9,8 @@ export type Pillar = {
     | "One shared source of truth"
     | "Compliance that keeps up"
     | "See around corners"
-    | "Built to scale";
+    | "Built to scale"
+    | "Built for the workforce, not just HR";
 };
 
 export const PILLARS: Pillar[] = [
@@ -124,5 +125,37 @@ export const PILLARS: Pillar[] = [
     detail:
       "Moving a 1,000-person org onto a new payroll system is a nonstarter if it means a rip-and-replace of the HRIS you already run. Verity syncs natively with the HR systems already in place and exposes a documented API and webhooks for anything custom, so payroll becomes another connected system rather than a second source of truth.",
     group: "Built to scale",
+  },
+  {
+    letter: "O",
+    title: "Digital contracts & e-signature onboarding",
+    summary: "New starters sign their contract inside Verity — no separate HR tool for day one.",
+    detail:
+      "PayFit and HiBob both build contract creation, amendment and e-signing into their platform, and it's a genuine gap in Verity's current build. A new starter's signed contract, tax code and bank details flow straight into their first payroll run instead of arriving as a PDF someone has to re-key.",
+    group: "One shared source of truth",
+  },
+  {
+    letter: "P",
+    title: "Shift rostering & timesheet import",
+    summary: "Build the rota, collect the hours, and feed both straight into payroll.",
+    detail:
+      "Employment Hero's rostering and shift-swap tools are a real strength for shift-based businesses, and it's a gap the cross-system ingestion agent (pillar C) only half-covers — ingestion assumes the rota already exists somewhere else. Verity closes the loop: build the rota, let staff swap shifts within rules, and the hours worked flow directly into the next run.",
+    group: "Catch it before payday",
+  },
+  {
+    letter: "Q",
+    title: "On-demand wage access",
+    summary: "Let employees draw down earned pay before payday, without a payday loan.",
+    detail:
+      "Of the six competitors reviewed, only Employment Hero (InstaPay) offers this today. Because Verity already runs a Continuous Payroll Ledger with live, up-to-the-day earned-wage figures (pillar B), it's positioned to offer this more accurately than a bolt-on — the ledger already knows exactly what's been earned, not an estimate.",
+    group: "Built for the workforce, not just HR",
+  },
+  {
+    letter: "R",
+    title: "Statutory reporting automation",
+    summary: "Gender Pay Gap and other mandatory UK filings, generated automatically, not built by hand every April.",
+    detail:
+      "UK employers with 250+ employees must publish Gender Pay Gap figures annually — a real, legally-mandated reporting burden that none of the six competitors reviewed surface prominently on their own site. Verity generates it directly from real payroll data instead of a spreadsheet exercise someone in HR redoes from scratch every year.",
+    group: "Compliance that keeps up",
   },
 ];

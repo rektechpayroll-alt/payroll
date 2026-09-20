@@ -4,6 +4,7 @@ import { PILLARS, type Pillar } from "@/lib/pillars";
 const GROUPS: Pillar["group"][] = [
   "Catch it before payday",
   "Explain, don't escalate",
+  "Built for the workforce, not just HR",
   "One shared source of truth",
   "Compliance that keeps up",
   "See around corners",

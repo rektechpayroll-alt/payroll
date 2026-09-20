@@ -26,6 +26,22 @@ export default function ComparePage() {
                   {c.pricing}
                 </span>
               </div>
+              <div className="mt-1 text-[12px] text-[var(--ink-muted)]">{c.targetCustomer}</div>
+
+              <div className="mt-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ink-muted)]">
+                  What it offers
+                </div>
+                <ul className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-1 text-[13px] leading-relaxed text-[var(--ink-secondary)] sm:grid-cols-2">
+                  {c.features.map((f) => (
+                    <li key={f} className="flex gap-1.5">
+                      <span className="text-[var(--ink-muted)]">&middot;</span>
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--good-ink)]">
@@ -75,7 +91,7 @@ export default function ComparePage() {
               See how Verity closes those gaps.
             </h2>
             <p className="mt-2 text-[14px] text-[var(--accent-ink)]/85">
-              Ten features, none of them backward-looking compliance box-ticking.
+              Eighteen product pillars, built around the gaps competitors leave open — not backward-looking compliance box-ticking.
             </p>
           </div>
           <Link
