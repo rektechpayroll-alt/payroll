@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useUser, UserButton } from "@clerk/nextjs";
 
 function NavIcon({
   name,
@@ -198,6 +199,8 @@ export function Sidebar({
   pendingCount: number;
 }) {
   const pathname = usePathname();
+  const { user, isLoaded } = useUser();
+  const displayName = isLoaded ? user?.fullName || user?.primaryEmailAddress?.emailAddress || "Signed in" : "";
 
   return (
     <aside className="flex w-[236px] flex-none flex-col gap-[22px] border-r border-[var(--border)] bg-[var(--surface-2)] p-4 max-[760px]:hidden">
@@ -249,12 +252,14 @@ export function Sidebar({
       </nav>
 
       <div className="mt-auto flex items-center gap-2.5 border-t border-[var(--border)] px-2.5 pt-2.5">
-        <div className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--accent-soft)] text-[11px] font-bold text-[var(--accent-strong)]">
-          AS
-        </div>
-        <div>
-          <div className="text-[12.5px] font-semibold">Aniket Sharma</div>
-          <div className="text-[11px] text-[var(--ink-muted)]">Owner · 2FA enabled</div>
+        <UserButton
+          appearance={{
+            elements: { avatarBox: "h-[26px] w-[26px]" },
+          }}
+        />
+        <div className="min-w-0">
+          <div className="truncate text-[12.5px] font-semibold">{isLoaded ? displayName : "…"}</div>
+          <div className="text-[11px] text-[var(--ink-muted)]">Signed in</div>
         </div>
       </div>
     </aside>

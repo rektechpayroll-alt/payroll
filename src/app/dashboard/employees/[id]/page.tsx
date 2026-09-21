@@ -5,6 +5,7 @@ import { getEmployeeById, getCurrentLineForEmployee, getOnboardingTasks } from "
 import { nmwCheck, statutoryEligibility } from "@/lib/compliance";
 import { PayslipExplainer } from "@/components/PayslipExplainer";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
+import { EmployeeProfileCard } from "@/components/EmployeeProfileCard";
 
 export const dynamic = "force-dynamic";
 
@@ -64,41 +65,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
       </div>
 
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-2">
-        <section className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
-          <div className="border-b border-[var(--border)] px-[18px] py-[15px] pb-[13px]">
-            <h2 className="font-display text-[14.5px] font-semibold">Profile</h2>
-          </div>
-          <div className="flex flex-col gap-2.5 px-[18px] py-4 text-[13px]">
-            <div className="flex justify-between gap-3">
-              <span className="text-[var(--ink-muted)]">Email</span>
-              <span className="font-medium">{employee.email}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-[var(--ink-muted)]">Start date</span>
-              <span className="font-medium font-num">{employee.start_date}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-[var(--ink-muted)]">Tax code</span>
-              <span className="font-medium font-num">{employee.tax_code}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-[var(--ink-muted)]">NI number</span>
-              <span className="font-medium font-num">{employee.ni_number}</span>
-            </div>
-            {line && (
-              <div className="mt-1.5 border-t border-[var(--border)] pt-2.5">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">Current run status</div>
-                {line.severity && !line.resolved ? (
-                  <p className="text-[var(--ink-secondary)]">
-                    <strong className="text-[var(--ink)]">{line.tag_label}</strong> — {line.reason}
-                  </p>
-                ) : (
-                  <p className="text-[var(--good-ink)]">Validated automatically — no issues on this run.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
+        <EmployeeProfileCard initialEmployee={employee} line={line} />
 
         <section className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
           <div className="border-b border-[var(--border)] px-[18px] py-[15px] pb-[13px]">

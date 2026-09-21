@@ -298,7 +298,7 @@ export default function MarketingHome() {
               See the exception-first review flow in action.
             </h2>
             <p className="mt-2 text-[14px] text-[#0a0f0a]/75">
-              A working demo, seeded with a real payroll run — no sign-up required.
+              A working demo, seeded with a real payroll run — sign up free, no card required.
             </p>
           </div>
           <Link href="/dashboard" className="mkt-pill flex-none bg-black px-6 py-3 text-[14px] font-semibold text-white">

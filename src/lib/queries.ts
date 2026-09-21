@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getPool, ready } from "./db";
+import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
 
 const COMPANY_ID = "harrow-vale";
 
@@ -295,6 +295,59 @@ export async function getEmployeeById(id: string): Promise<Employee | null> {
   const pool = getPool();
   const { rows } = await pool.query("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [id, COMPANY_ID]);
   return (rows[0] as Employee) ?? null;
+}
+
+export type CreateEmployeeInput = {
+  name: string;
+  role: string;
+  email: string;
+  employmentType: string;
+  startDate: string;
+  taxCode: string;
+  niNumber: string;
+  weeklyHours: number;
+};
+
+/** Creates a new employee and seeds their onboarding checklist (all outstanding, since they're brand new) — the real counterpart to the seeded roster. */
+export async function createEmployee(input: CreateEmployeeInput): Promise<Employee> {
+  await ready();
+  const pool = getPool();
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO employees (id, company_id, name, role, email, employment_type, start_date, tax_code, ni_number, weekly_hours, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM employees WHERE company_id = $2))`,
+    [id, COMPANY_ID, input.name, input.role, input.email, input.employmentType, input.startDate, input.taxCode, input.niNumber, input.weeklyHours]
+  );
+  for (let i = 0; i < ONBOARDING_TASK_LABELS.length; i++) {
+    await pool.query(`INSERT INTO onboarding_tasks (id, employee_id, label, done, sort_order) VALUES ($1,$2,$3,0,$4)`, [
+      randomUUID(),
+      id,
+      ONBOARDING_TASK_LABELS[i],
+      i,
+    ]);
+  }
+  const { rows } = await pool.query("SELECT * FROM employees WHERE id = $1", [id]);
+  return rows[0] as Employee;
+}
+
+export type UpdateEmployeeInput = {
+  role: string;
+  email: string;
+  employmentType: string;
+  taxCode: string;
+  niNumber: string;
+  weeklyHours: number;
+};
+
+export async function updateEmployee(id: string, input: UpdateEmployeeInput): Promise<Employee> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE employees SET role = $1, email = $2, employment_type = $3, tax_code = $4, ni_number = $5, weekly_hours = $6
+     WHERE id = $7 AND company_id = $8 RETURNING *`,
+    [input.role, input.email, input.employmentType, input.taxCode, input.niNumber, input.weeklyHours, id, COMPANY_ID]
+  );
+  return rows[0] as Employee;
 }
 
 /** The employee's line on the current (most recent) payroll run, if one exists. */

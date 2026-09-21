@@ -131,7 +131,7 @@ export function MarketingHeader() {
               View live demo
             </Link>
             <Link
-              href="/pricing"
+              href="/sign-up"
               className="mkt-pill bg-white px-4 py-[9px] text-[13px] font-semibold text-black hover:bg-white/90"
             >
               Get started
@@ -187,7 +187,7 @@ export function MarketingHeader() {
                 View live demo
               </Link>
               <Link
-                href="/pricing"
+                href="/sign-up"
                 onClick={() => setOpen(false)}
                 className="mkt-pill mt-1.5 bg-white px-2.5 py-2.5 text-center text-[14px] font-semibold text-black"
               >

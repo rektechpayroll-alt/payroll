@@ -753,7 +753,7 @@ async function seedPriorRun(companyId: string): Promise<void> {
   }
 }
 
-const ONBOARDING_TASK_LABELS = ["Contract signed & returned", "Right-to-work check completed", "Bank details verified", "Tax code confirmed with HMRC starter checklist"];
+export const ONBOARDING_TASK_LABELS = ["Contract signed & returned", "Right-to-work check completed", "Bank details verified", "Tax code confirmed with HMRC starter checklist"];
 
 /** Seeds a digital-onboarding checklist per employee if none exist yet (pillar O). Employees who started long enough ago are marked fully onboarded; recent starters are left with outstanding items so the feature has something real to show. */
 async function seedOnboardingTasks(companyId: string): Promise<void> {
