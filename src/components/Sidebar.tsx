@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" | "diff" | "ledger" }) {
+function NavIcon({
+  name,
+}: {
+  name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" | "diff" | "ledger" | "cart" | "box" | "receipt" | "briefcase";
+}) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8 } as const;
   switch (name) {
     case "grid":
@@ -77,6 +81,35 @@ function NavIcon({ name }: { name: "grid" | "trend" | "people" | "doc" | "card" 
           <path d="M9 8h6M9 12h6M9 16h3" />
         </svg>
       );
+    case "cart":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M3 4h2.2l1 12.4a2 2 0 0 0 2 1.85h8.6a2 2 0 0 0 2-1.7L20 8.5H6.4" />
+          <circle cx="9.5" cy="20.5" r="1.2" />
+          <circle cx="17" cy="20.5" r="1.2" />
+        </svg>
+      );
+    case "box":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M3.5 7.5 12 3l8.5 4.5V16.5L12 21l-8.5-4.5Z" />
+          <path d="M3.5 7.5 12 12l8.5-4.5M12 12v9" />
+        </svg>
+      );
+    case "receipt":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M6 3h12v18l-2.5-1.6L13 21l-2.5-1.6L8 21l-2-1.6Z" />
+          <path d="M9 8h6M9 12h6" />
+        </svg>
+      );
+    case "briefcase":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <rect x="3" y="7.5" width="18" height="12" rx="1.6" />
+          <path d="M8.5 7.5V5.8a1.3 1.3 0 0 1 1.3-1.3h4.4a1.3 1.3 0 0 1 1.3 1.3V7.5M3 12.5h18" />
+        </svg>
+      );
   }
 }
 
@@ -88,6 +121,10 @@ const NAV = [
   { href: "/dashboard/simulator", label: "Simulator", icon: "flask" as const },
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
   { href: "/dashboard/ledger", label: "Verity Ledger", icon: "ledger" as const },
+  { href: "/dashboard/purchasing", label: "Purchasing", icon: "cart" as const },
+  { href: "/dashboard/inventory", label: "Inventory", icon: "box" as const },
+  { href: "/dashboard/expenses", label: "Expenses", icon: "receipt" as const },
+  { href: "/dashboard/projects", label: "Projects", icon: "briefcase" as const },
   { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },
   { href: "/dashboard/integrations", label: "Integrations", icon: "card" as const },
   { href: "/dashboard/settings", label: "Settings", icon: "gear" as const },

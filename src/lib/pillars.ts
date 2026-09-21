@@ -199,4 +199,68 @@ export const PILLARS: Pillar[] = [
       "The digital onboarding checklist (pillar O) is real and working today. The fuller HR layer competitors like HiBob and PayFit ship — org charts, applicant tracking, performance reviews, benefits administration — is the next planned extension, so Verity can be a single system of record for the whole employee lifecycle, not just the payroll run.",
     group: "Beyond payroll",
   },
+  {
+    letter: "V",
+    title: "Send Quotes",
+    summary: "A quote a customer accepts converts straight into a real draft invoice, line items included.",
+    detail:
+      "Quoting is the sales-side precursor to invoicing — Xero and most accounting suites ship it as a separate feature that still has to be re-keyed into an invoice by hand once accepted. Verity Ledger's Quotes tab skips the re-keying: an accepted quote's customer, line items and VAT carry straight across into a new draft invoice with one click, live at /dashboard/ledger.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "W",
+    title: "Accept Payments",
+    summary: "A one-click “Pay by card” path on every sent invoice, alongside bank-transfer reconciliation.",
+    detail:
+      "Most invoicing tools offer a card payment link as their fast path to getting paid, next to the slower bank-transfer route that needs reconciling. Verity Ledger ships both: bank transfers still reconcile through the suggested-match engine (pillar S2), and a card payment marks the invoice paid immediately while dropping a matched credit onto the same bank feed — clearly labelled as a simulated charge, since a real card gateway isn't wired into this demo.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "X",
+    title: "Pay Bills",
+    summary: "Accounts payable alongside accounts receivable — supplier bills that reconcile against the same bank feed.",
+    detail:
+      "Invoicing (money coming in) is only half of Verity Ledger. Pay Bills is the other half: supplier bills tracked to due date, with a one-click “Pay bill” that drops a matched debit onto the connected bank feed — the same reconciliation architecture that already handles invoices and payroll's BACS run, applied to the purchasing side. Live at /dashboard/purchasing.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "Y",
+    title: "Create Purchase Orders",
+    summary: "Order from a supplier, then convert the received order straight into a bill — no re-keying the total twice.",
+    detail:
+      "A purchase order is the commitment; a bill is what actually gets paid. Verity's Purchase Orders convert directly into a Pay Bills entry once marked received, carrying the total and supplier across automatically — the buying-side mirror of the Quotes -> Invoice flow (pillar V).",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "Z",
+    title: "Manage Inventory",
+    summary: "Stock tracking for what a lettings and management agency actually holds — signage, key fobs, welcome packs, equipment.",
+    detail:
+      "Not warehouse SKUs — the physical stock a property agency really carries: To Let and For Sale boards, branded key fobs, tenant welcome packs, key safes. Every adjustment logs a real movement rather than editing the quantity directly, so the stock count is always derived from an auditable ledger, and low-stock items are flagged automatically against a reorder level. Live at /dashboard/inventory.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AA",
+    title: "Claim Expenses",
+    summary: "Submit, approve and reimburse — the working half of pillar F's expenses promise, with reimbursement reconciled against the bank feed.",
+    detail:
+      "Pillar F promised employees could upload expense receipts that reconcile automatically against bank transactions; this ships the real workflow behind that promise. An employee submits a claim, a manager approves or rejects it, and reimbursing it drops a debit onto the same connected bank feed Verity Ledger and Purchasing already use. Live at /dashboard/expenses.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AB",
+    title: "Mileage Tracking",
+    summary: "Log a trip, get the HMRC AMAP-rate reimbursement calculated automatically — no spreadsheet.",
+    detail:
+      "Mileage claims are computed at the real HMRC Approved Mileage Allowance Payment rate (45p/mile for the first 10,000 business miles) the moment a trip is logged, rather than left for someone to calculate by hand at month end. Approval and reimbursement follow the same pattern as expense claims, sharing the /dashboard/expenses page as a second tab.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AC",
+    title: "Track Projects",
+    summary: "Client work tracked against a budget — logged hours convert to cost at each project's hourly rate.",
+    detail:
+      "The same “budget headroom” idea the Profitability page already applies to payroll, extended to client project work: log hours against a project, and Verity converts them to cost at that project's hourly rate in real time, flagging anything that's gone over budget rather than leaving it to be discovered at invoicing time. Live at /dashboard/projects.",
+    group: "Beyond payroll",
+  },
 ];

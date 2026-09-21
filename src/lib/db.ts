@@ -196,6 +196,139 @@ async function createSchema(): Promise<void> {
       matched_payroll_run_id TEXT REFERENCES payroll_runs(id),
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS quotes (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      quote_number TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT,
+      issue_date TEXT NOT NULL,
+      expiry_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      subtotal DOUBLE PRECISION NOT NULL,
+      vat_rate DOUBLE PRECISION NOT NULL DEFAULT 20,
+      vat_amount DOUBLE PRECISION NOT NULL,
+      total DOUBLE PRECISION NOT NULL,
+      converted_invoice_id TEXT REFERENCES invoices(id),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS quote_items (
+      id TEXT PRIMARY KEY,
+      quote_id TEXT NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity DOUBLE PRECISION NOT NULL DEFAULT 1,
+      unit_price DOUBLE PRECISION NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS bills (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      bill_reference TEXT NOT NULL,
+      supplier_name TEXT NOT NULL,
+      category TEXT,
+      bill_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unpaid',
+      total DOUBLE PRECISION NOT NULL,
+      source_purchase_order_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      po_number TEXT NOT NULL,
+      supplier_name TEXT NOT NULL,
+      order_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      total DOUBLE PRECISION NOT NULL,
+      converted_bill_id TEXT REFERENCES bills(id),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_order_items (
+      id TEXT PRIMARY KEY,
+      po_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity DOUBLE PRECISION NOT NULL DEFAULT 1,
+      unit_price DOUBLE PRECISION NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      sku TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      quantity_on_hand INTEGER NOT NULL DEFAULT 0,
+      reorder_level INTEGER NOT NULL DEFAULT 0,
+      unit_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_movements (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      change INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_claims (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      expense_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'submitted',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS mileage_claims (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      trip_date TEXT NOT NULL,
+      from_location TEXT NOT NULL,
+      to_location TEXT NOT NULL,
+      miles DOUBLE PRECISION NOT NULL,
+      rate_per_mile DOUBLE PRECISION NOT NULL DEFAULT 0.45,
+      amount DOUBLE PRECISION NOT NULL,
+      status TEXT NOT NULL DEFAULT 'submitted',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      client_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      budget DOUBLE PRECISION NOT NULL,
+      hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 45,
+      start_date TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS project_time_entries (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      employee_id TEXT REFERENCES employees(id),
+      employee_name TEXT NOT NULL,
+      hours DOUBLE PRECISION NOT NULL,
+      entry_date TEXT NOT NULL,
+      note TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // Additive migrations for databases created before this schema revision —
@@ -207,6 +340,7 @@ async function createSchema(): Promise<void> {
     ALTER TABLE companies ADD COLUMN IF NOT EXISTS notify_on_approval BOOLEAN NOT NULL DEFAULT true;
     ALTER TABLE companies ADD COLUMN IF NOT EXISTS approval_mode TEXT NOT NULL DEFAULT 'manual';
     ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_id TEXT REFERENCES employees(id);
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS matched_bill_id TEXT REFERENCES bills(id);
   `);
 }
 
@@ -221,6 +355,7 @@ async function seed(): Promise<void> {
     await seedCloseTasks(companyId);
     await seedPriorRun(companyId);
     await seedLedger(companyId);
+    await seedBusinessOps(companyId);
     return;
   }
 
@@ -381,6 +516,7 @@ async function seed(): Promise<void> {
   await seedCloseTasks(companyId);
   await seedPriorRun(companyId);
   await seedLedger(companyId);
+  await seedBusinessOps(companyId);
 }
 
 function emailFor(name: string): string {
@@ -797,6 +933,322 @@ async function seedLedger(companyId: string): Promise<void> {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [randomUUID(), companyId, t.date, t.description, t.amount, t.direction, t.category, t.status, t.matchedInvoiceId, t.matchedPayrollRunId, i]
     );
+  }
+}
+
+/**
+ * Seeds the "business ops" feature set added alongside Verity Ledger: Quotes, Bills,
+ * Purchase Orders, Inventory, Expense Claims, Mileage Tracking and Projects. One function
+ * per area, called from a single wrapper so seed()/the backfill branch only need one call.
+ * Safe to call on every request — each sub-seed checks its own table before inserting.
+ */
+async function seedBusinessOps(companyId: string): Promise<void> {
+  await seedQuotes(companyId);
+  await seedBillsAndPurchaseOrders(companyId);
+  await seedInventory(companyId);
+  await seedExpenseClaims(companyId);
+  await seedMileageClaims(companyId);
+  await seedProjects(companyId);
+}
+
+async function seedQuotes(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM quotes WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  type SeedQuote = {
+    number: string;
+    customerName: string;
+    customerEmail: string;
+    issueDate: string;
+    expiryDate: string;
+    status: "draft" | "sent" | "accepted";
+    items: Array<{ description: string; quantity: number; unitPrice: number }>;
+  };
+
+  const quotes: SeedQuote[] = [
+    {
+      number: "QUO-2001",
+      customerName: "Ashford Living",
+      customerEmail: "hello@ashfordliving.co.uk",
+      issueDate: "12 Sep 2026",
+      expiryDate: "26 Sep 2026",
+      status: "sent",
+      items: [{ description: "Full management service — 6 units", quantity: 1, unitPrice: 1800.0 }],
+    },
+    {
+      number: "QUO-2002",
+      customerName: "Bellcourt Estates Ltd",
+      customerEmail: "accounts@bellcourtestates.co.uk",
+      issueDate: "15 Sep 2026",
+      expiryDate: "29 Sep 2026",
+      status: "accepted",
+      items: [{ description: "Tenant find only — 2 units", quantity: 1, unitPrice: 900.0 }],
+    },
+    {
+      number: "QUO-2003",
+      customerName: "Riverside Quarter MC",
+      customerEmail: "directors@riversidequartermc.co.uk",
+      issueDate: "18 Sep 2026",
+      expiryDate: "2 Oct 2026",
+      status: "draft",
+      items: [{ description: "Block management — communal areas", quantity: 1, unitPrice: 2400.0 }],
+    },
+  ];
+
+  for (let i = 0; i < quotes.length; i++) {
+    const q = quotes[i];
+    const subtotal = q.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+    const vatAmount = Math.round(subtotal * 0.2 * 100) / 100;
+    const total = Math.round((subtotal + vatAmount) * 100) / 100;
+    const quoteId = randomUUID();
+    await pool.query(
+      `INSERT INTO quotes (id, company_id, quote_number, customer_name, customer_email, issue_date, expiry_date, status, subtotal, vat_rate, vat_amount, total, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,20,$10,$11,$12)`,
+      [quoteId, companyId, q.number, q.customerName, q.customerEmail, q.issueDate, q.expiryDate, q.status, subtotal, vatAmount, total, i]
+    );
+    for (let j = 0; j < q.items.length; j++) {
+      const it = q.items[j];
+      await pool.query(
+        `INSERT INTO quote_items (id, quote_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [randomUUID(), quoteId, it.description, it.quantity, it.unitPrice, it.quantity * it.unitPrice, j]
+      );
+    }
+  }
+}
+
+async function seedBillsAndPurchaseOrders(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM bills WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  // PO-4001 is seeded as already converted into BILL-3003, so the PO -> Bill flow has a
+  // real example on load rather than only being demonstrable by clicking through it live.
+  const po1Id = randomUUID();
+  const bill3Id = randomUUID();
+  const bill1Id = randomUUID();
+
+  await pool.query(
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, source_purchase_order_id, sort_order)
+     VALUES ($1,$2,'BILL-3001','Rightmove','Marketing & portals','1 Sep 2026','15 Sep 2026','paid',480.00,NULL,0)`,
+    [bill1Id, companyId]
+  );
+  // The paid bill above already left the account — reflected as a matched debit on the
+  // same connected feed Verity Ledger's invoices reconcile against.
+  await pool.query(
+    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_bill_id, sort_order)
+     VALUES ($1,$2,'2 Sep 2026','RIGHTMOVE PORTAL SUBSCRIPTION',480.00,'debit','Marketing & portals','matched',$3,6)`,
+    [randomUUID(), companyId, bill1Id]
+  );
+  await pool.query(
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, source_purchase_order_id, sort_order)
+     VALUES ($1,$2,'BILL-3002','Zoopla','Marketing & portals','1 Sep 2026','15 Sep 2026','unpaid',360.00,NULL,1)`,
+    [randomUUID(), companyId]
+  );
+  await pool.query(
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, source_purchase_order_id, sort_order)
+     VALUES ($1,$2,'BILL-3003','Harrow Print & Signage','Signage & print','12 Sep 2026','26 Sep 2026','unpaid',210.00,$3,2)`,
+    [bill3Id, companyId, po1Id]
+  );
+
+  await pool.query(
+    `INSERT INTO purchase_orders (id, company_id, po_number, supplier_name, order_date, status, total, converted_bill_id, sort_order)
+     VALUES ($1,$2,'PO-4001','Harrow Print & Signage','5 Sep 2026','converted_to_bill',210.00,$3,0)`,
+    [po1Id, companyId, bill3Id]
+  );
+  await pool.query(
+    `INSERT INTO purchase_order_items (id, po_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,'To Let / For Sale board printing — 70 boards',1,210.00,210.00,0)`,
+    [randomUUID(), po1Id]
+  );
+
+  const po2Id = randomUUID();
+  await pool.query(
+    `INSERT INTO purchase_orders (id, company_id, po_number, supplier_name, order_date, status, total, converted_bill_id, sort_order)
+     VALUES ($1,$2,'PO-4002','Officeworks Direct','16 Sep 2026','sent',340.00,NULL,1)`,
+    [po2Id, companyId]
+  );
+  await pool.query(
+    `INSERT INTO purchase_order_items (id, po_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,'Tenant welcome pack stationery — Q4 restock',1,340.00,340.00,0)`,
+    [randomUUID(), po2Id]
+  );
+}
+
+async function seedInventory(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM inventory_items WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  type SeedItem = { sku: string; name: string; category: string; qty: number; reorder: number; cost: number; movements: Array<{ change: number; reason: string; date: string }> };
+  const items: SeedItem[] = [
+    {
+      sku: "TL-BOARD", name: "To Let board (correx, 600x450)", category: "Signage", qty: 34, reorder: 15, cost: 4.2,
+      movements: [{ change: -12, reason: "Installed across Sep listings", date: "10 Sep 2026" }],
+    },
+    {
+      sku: "FS-BOARD", name: "For Sale board (correx, 600x450)", category: "Signage", qty: 8, reorder: 15, cost: 4.8,
+      movements: [{ change: -9, reason: "Installed across Sep listings", date: "10 Sep 2026" }],
+    },
+    {
+      sku: "KEY-FOB", name: "Branded key fob", category: "Branded merchandise", qty: 210, reorder: 50, cost: 0.65,
+      movements: [{ change: -40, reason: "New tenant welcome packs", date: "5 Sep 2026" }],
+    },
+    {
+      sku: "WELCOME-PACK", name: "Tenant welcome pack", category: "Stationery", qty: 12, reorder: 20, cost: 3.1,
+      movements: [{ change: -18, reason: "Distributed to new tenants", date: "8 Sep 2026" }],
+    },
+    {
+      sku: "LOCKBOX", name: "Key safe / lockbox", category: "Equipment", qty: 6, reorder: 5, cost: 18.5,
+      movements: [{ change: -3, reason: "Fitted at new managed properties", date: "14 Sep 2026" }],
+    },
+  ];
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const itemId = randomUUID();
+    await pool.query(
+      `INSERT INTO inventory_items (id, company_id, sku, name, category, quantity_on_hand, reorder_level, unit_cost, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [itemId, companyId, it.sku, it.name, it.category, it.qty, it.reorder, it.cost, i]
+    );
+    for (let j = 0; j < it.movements.length; j++) {
+      const m = it.movements[j];
+      await pool.query(
+        `INSERT INTO inventory_movements (id, item_id, change, reason, occurred_at, sort_order) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [randomUUID(), itemId, m.change, m.reason, m.date, j]
+      );
+    }
+  }
+}
+
+async function seedExpenseClaims(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM expense_claims WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const { rows: employees } = await pool.query("SELECT id, name FROM employees WHERE company_id = $1", [companyId]);
+  if (!employees.length) return;
+  const idFor = (name: string) => (employees.find((e) => e.name === name) as { id: string } | undefined)?.id;
+
+  const claims: Array<{ employeeName: string; description: string; category: string; amount: number; date: string; status: "submitted" | "approved" | "reimbursed" }> = [
+    { employeeName: "Grace Adeyemi", description: "Client lunch — Bellcourt renewal meeting", category: "Client entertainment", amount: 68.4, date: "8 Sep 2026", status: "approved" },
+    { employeeName: "Owen Blake", description: "Emergency boiler part — 14 Riverside Quarter", category: "Maintenance & repairs", amount: 142.0, date: "12 Sep 2026", status: "reimbursed" },
+    { employeeName: "Farah Hussain", description: "Social media ad boost — September listings", category: "Marketing", amount: 250.0, date: "15 Sep 2026", status: "submitted" },
+  ];
+
+  for (let i = 0; i < claims.length; i++) {
+    const c = claims[i];
+    const employeeId = idFor(c.employeeName);
+    if (!employeeId) continue;
+    await pool.query(
+      `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [randomUUID(), companyId, employeeId, c.description, c.category, c.amount, c.date, c.status, i]
+    );
+    if (c.status === "reimbursed") {
+      await pool.query(
+        `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, sort_order)
+         VALUES ($1,$2,$3,$4,$5,'debit','Expense reimbursement','unmatched',7)`,
+        [randomUUID(), companyId, c.date, `EXPENSE REIMBURSEMENT — ${c.employeeName.toUpperCase()}`, c.amount]
+      );
+    }
+  }
+}
+
+async function seedMileageClaims(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM mileage_claims WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const { rows: employees } = await pool.query("SELECT id, name FROM employees WHERE company_id = $1", [companyId]);
+  if (!employees.length) return;
+  const idFor = (name: string) => (employees.find((e) => e.name === name) as { id: string } | undefined)?.id;
+
+  const claims: Array<{ employeeName: string; date: string; from: string; to: string; miles: number; status: "submitted" | "approved" | "reimbursed" }> = [
+    { employeeName: "Tomasz Nowak", date: "10 Sep 2026", from: "Harrow office", to: "Riverside Quarter viewings", miles: 18, status: "approved" },
+    { employeeName: "Ben Coates", date: "14 Sep 2026", from: "Harrow office", to: "5-site viewing loop", miles: 42, status: "submitted" },
+  ];
+
+  const RATE = 0.45;
+  for (let i = 0; i < claims.length; i++) {
+    const c = claims[i];
+    const employeeId = idFor(c.employeeName);
+    if (!employeeId) continue;
+    const amount = Math.round(c.miles * RATE * 100) / 100;
+    await pool.query(
+      `INSERT INTO mileage_claims (id, company_id, employee_id, trip_date, from_location, to_location, miles, rate_per_mile, amount, status, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [randomUUID(), companyId, employeeId, c.date, c.from, c.to, c.miles, RATE, amount, c.status, i]
+    );
+  }
+}
+
+async function seedProjects(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM projects WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const { rows: employees } = await pool.query("SELECT id, name FROM employees WHERE company_id = $1", [companyId]);
+  const idFor = (name: string) => (employees.find((e) => e.name === name) as { id: string } | undefined)?.id ?? null;
+
+  type SeedProject = {
+    name: string;
+    client: string;
+    status: "active" | "completed" | "on_hold";
+    budget: number;
+    startDate: string;
+    entries: Array<{ employeeName: string; hours: number; date: string; note: string }>;
+  };
+
+  const projects: SeedProject[] = [
+    {
+      name: "Riverside Quarter Block Management Setup",
+      client: "Riverside Quarter MC",
+      status: "active",
+      budget: 4500,
+      startDate: "1 Aug 2026",
+      entries: [
+        { employeeName: "Hannah Fischer", hours: 6, date: "3 Sep 2026", note: "Compliance audit of communal areas" },
+        { employeeName: "Priya Anand", hours: 4, date: "5 Sep 2026", note: "Contract setup & onboarding" },
+        { employeeName: "Owen Blake", hours: 8, date: "8 Sep 2026", note: "Initial maintenance survey" },
+      ],
+    },
+    {
+      name: "Thornfield Residential Portfolio Onboarding",
+      client: "Thornfield Residential",
+      status: "active",
+      budget: 1200,
+      startDate: "1 Sep 2026",
+      entries: [
+        { employeeName: "Priya Anand", hours: 10, date: "6 Sep 2026", note: "Portfolio data migration" },
+        { employeeName: "Hannah Fischer", hours: 8, date: "10 Sep 2026", note: "Compliance review — 12 units" },
+      ],
+    },
+    {
+      name: "Bellcourt Estates Annual Review",
+      client: "Bellcourt Estates Ltd",
+      status: "completed",
+      budget: 600,
+      startDate: "1 Jul 2026",
+      entries: [{ employeeName: "Grace Adeyemi", hours: 14, date: "20 Jul 2026", note: "Full portfolio review & report" }],
+    },
+  ];
+
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    const projectId = randomUUID();
+    await pool.query(
+      `INSERT INTO projects (id, company_id, name, client_name, status, budget, hourly_rate, start_date, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,45,$7,$8)`,
+      [projectId, companyId, p.name, p.client, p.status, p.budget, p.startDate, i]
+    );
+    for (let j = 0; j < p.entries.length; j++) {
+      const e = p.entries[j];
+      await pool.query(
+        `INSERT INTO project_time_entries (id, project_id, employee_id, employee_name, hours, entry_date, note, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [randomUUID(), projectId, idFor(e.employeeName), e.employeeName, e.hours, e.date, e.note, j]
+      );
+    }
   }
 }
 

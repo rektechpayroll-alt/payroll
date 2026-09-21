@@ -428,6 +428,7 @@ export type BankTransaction = {
   status: "unmatched" | "matched";
   matched_invoice_id: string | null;
   matched_payroll_run_id: string | null;
+  matched_bill_id: string | null;
   sort_order: number;
 };
 
@@ -575,4 +576,534 @@ export async function toggleIntegration(id: string): Promise<Integration> {
     [id, nowLabel, COMPANY_ID]
   );
   return rows[0] as Integration;
+}
+
+// ---------------------------------------------------------------------------
+// Quotes — the sales-side precursor to an invoice (Send Quotes)
+// ---------------------------------------------------------------------------
+
+export type Quote = {
+  id: string;
+  company_id: string;
+  quote_number: string;
+  customer_name: string;
+  customer_email: string | null;
+  issue_date: string;
+  expiry_date: string;
+  status: "draft" | "sent" | "accepted" | "declined" | "converted";
+  subtotal: number;
+  vat_rate: number;
+  vat_amount: number;
+  total: number;
+  converted_invoice_id: string | null;
+  sort_order: number;
+};
+
+export async function getQuotes(): Promise<Quote[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM quotes WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as Quote[];
+}
+
+export type CreateQuoteInput = {
+  customerName: string;
+  customerEmail: string | null;
+  expiryDate: string;
+  items: Array<{ description: string; quantity: number; unitPrice: number }>;
+};
+
+export async function createQuote(input: CreateQuoteInput): Promise<Quote> {
+  await ready();
+  const pool = getPool();
+  const subtotal = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+  const vatAmount = Math.round(subtotal * 0.2 * 100) / 100;
+  const total = Math.round((subtotal + vatAmount) * 100) / 100;
+  const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM quotes WHERE company_id = $1", [COMPANY_ID]);
+  const nextNumber = 2001 + Number(countRows[0]?.n ?? 0);
+  const quoteId = randomUUID();
+
+  await pool.query(
+    `INSERT INTO quotes (id, company_id, quote_number, customer_name, customer_email, issue_date, expiry_date, status, subtotal, vat_rate, vat_amount, total, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,20,$9,$10,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM quotes WHERE company_id = $2))`,
+    [
+      quoteId,
+      COMPANY_ID,
+      `QUO-${nextNumber}`,
+      input.customerName,
+      input.customerEmail,
+      new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      input.expiryDate,
+      subtotal,
+      vatAmount,
+      total,
+    ]
+  );
+  for (let i = 0; i < input.items.length; i++) {
+    const it = input.items[i];
+    await pool.query(
+      `INSERT INTO quote_items (id, quote_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [randomUUID(), quoteId, it.description, it.quantity, it.unitPrice, it.quantity * it.unitPrice, i]
+    );
+  }
+  const { rows } = await pool.query("SELECT * FROM quotes WHERE id = $1", [quoteId]);
+  return rows[0] as Quote;
+}
+
+export async function updateQuoteStatus(id: string, status: Quote["status"]): Promise<Quote> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("UPDATE quotes SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
+  return rows[0] as Quote;
+}
+
+/** Converts an accepted quote into a real draft invoice, copying its line items — the natural quote -> invoice flow. */
+export async function convertQuoteToInvoice(quoteId: string): Promise<{ quote: Quote; invoice: Invoice }> {
+  await ready();
+  const pool = getPool();
+  const { rows: quoteRows } = await pool.query("SELECT * FROM quotes WHERE id = $1 AND company_id = $2", [quoteId, COMPANY_ID]);
+  const quote = quoteRows[0] as Quote | undefined;
+  if (!quote) throw new Error("Quote not found");
+
+  const { rows: itemRows } = await pool.query("SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY sort_order ASC", [quoteId]);
+  const items = (itemRows as InvoiceItem[]).map((it) => ({ description: it.description, quantity: it.quantity, unitPrice: it.unit_price }));
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 14);
+  const invoice = await createInvoice({
+    customerName: quote.customer_name,
+    customerEmail: quote.customer_email,
+    issueDate: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    dueDate: dueDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    vatRate: quote.vat_rate,
+    notes: `Converted from ${quote.quote_number}`,
+    items,
+  });
+  await pool.query("UPDATE quotes SET status = 'converted', converted_invoice_id = $1 WHERE id = $2", [invoice.id, quoteId]);
+  await updateInvoiceStatus(invoice.id, "sent");
+  const { rows } = await pool.query("SELECT * FROM quotes WHERE id = $1", [quoteId]);
+  return { quote: rows[0] as Quote, invoice: { ...invoice, status: "sent" } };
+}
+
+// ---------------------------------------------------------------------------
+// Accept Payments — a payment link per invoice (simulated card capture, same
+// honesty pattern the rest of the demo uses for HMRC/BACS submission)
+// ---------------------------------------------------------------------------
+
+export async function getInvoiceById(id: string): Promise<Invoice | null> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM invoices WHERE id = $1 AND company_id = $2", [id, COMPANY_ID]);
+  return (rows[0] as Invoice) ?? null;
+}
+
+/** Records a simulated card payment: marks the invoice paid and drops a matched credit onto the bank feed, the fast path alongside bank-transfer reconciliation. */
+export async function payInvoiceByCard(id: string): Promise<Invoice> {
+  await ready();
+  const pool = getPool();
+  const invoice = await getInvoiceById(id);
+  if (!invoice) throw new Error("Invoice not found");
+
+  const txnId = randomUUID();
+  await pool.query(
+    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_invoice_id, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'credit',NULL,'matched',$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+    [
+      txnId,
+      COMPANY_ID,
+      new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      `CARD PAYMENT (demo) — ${invoice.customer_name}`,
+      invoice.total,
+      id,
+    ]
+  );
+  return updateInvoiceStatus(id, "paid");
+}
+
+// ---------------------------------------------------------------------------
+// Bills & Purchase Orders — accounts payable (Pay Bills, Create Purchase Orders)
+// ---------------------------------------------------------------------------
+
+export type Bill = {
+  id: string;
+  company_id: string;
+  bill_reference: string;
+  supplier_name: string;
+  category: string | null;
+  bill_date: string;
+  due_date: string;
+  status: "unpaid" | "paid" | "void";
+  total: number;
+  source_purchase_order_id: string | null;
+  sort_order: number;
+};
+
+export async function getBills(): Promise<Bill[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM bills WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as Bill[];
+}
+
+export async function createBill(input: { supplierName: string; category: string | null; billDate: string; dueDate: string; total: number }): Promise<Bill> {
+  await ready();
+  const pool = getPool();
+  const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM bills WHERE company_id = $1", [COMPANY_ID]);
+  const nextNumber = 3001 + Number(countRows[0]?.n ?? 0);
+  const billId = randomUUID();
+  await pool.query(
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
+    [billId, COMPANY_ID, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, input.total]
+  );
+  const { rows } = await pool.query("SELECT * FROM bills WHERE id = $1", [billId]);
+  return rows[0] as Bill;
+}
+
+/** Pays a bill: marks it paid and drops a matched debit onto the bank feed, mirroring how a confirmed invoice payment works on the sales side. */
+export async function payBill(id: string): Promise<Bill> {
+  await ready();
+  const pool = getPool();
+  const { rows: billRows } = await pool.query("SELECT * FROM bills WHERE id = $1 AND company_id = $2", [id, COMPANY_ID]);
+  const bill = billRows[0] as Bill | undefined;
+  if (!bill) throw new Error("Bill not found");
+
+  await pool.query(
+    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_bill_id, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'debit',$6,'matched',$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+    [
+      randomUUID(),
+      COMPANY_ID,
+      new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      `${bill.supplier_name.toUpperCase()} — ${bill.bill_reference}`,
+      bill.total,
+      bill.category,
+      id,
+    ]
+  );
+  const { rows } = await pool.query("UPDATE bills SET status = 'paid' WHERE id = $1 AND company_id = $2 RETURNING *", [id, COMPANY_ID]);
+  return rows[0] as Bill;
+}
+
+export type PurchaseOrder = {
+  id: string;
+  company_id: string;
+  po_number: string;
+  supplier_name: string;
+  order_date: string;
+  status: "draft" | "sent" | "received" | "converted_to_bill";
+  total: number;
+  converted_bill_id: string | null;
+  sort_order: number;
+};
+
+export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM purchase_orders WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as PurchaseOrder[];
+}
+
+export type CreatePurchaseOrderInput = {
+  supplierName: string;
+  items: Array<{ description: string; quantity: number; unitPrice: number }>;
+};
+
+export async function createPurchaseOrder(input: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
+  await ready();
+  const pool = getPool();
+  const total = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+  const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM purchase_orders WHERE company_id = $1", [COMPANY_ID]);
+  const nextNumber = 4001 + Number(countRows[0]?.n ?? 0);
+  const poId = randomUUID();
+  await pool.query(
+    `INSERT INTO purchase_orders (id, company_id, po_number, supplier_name, order_date, status, total, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'draft',$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM purchase_orders WHERE company_id = $2))`,
+    [poId, COMPANY_ID, `PO-${nextNumber}`, input.supplierName, new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), total]
+  );
+  for (let i = 0; i < input.items.length; i++) {
+    const it = input.items[i];
+    await pool.query(
+      `INSERT INTO purchase_order_items (id, po_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [randomUUID(), poId, it.description, it.quantity, it.unitPrice, it.quantity * it.unitPrice, i]
+    );
+  }
+  const { rows } = await pool.query("SELECT * FROM purchase_orders WHERE id = $1", [poId]);
+  return rows[0] as PurchaseOrder;
+}
+
+export async function updatePurchaseOrderStatus(id: string, status: PurchaseOrder["status"]): Promise<PurchaseOrder> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("UPDATE purchase_orders SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
+  return rows[0] as PurchaseOrder;
+}
+
+/** Converts a received PO into a real bill, copying its total across — the natural PO -> Bill flow once goods/services arrive. */
+export async function convertPurchaseOrderToBill(poId: string): Promise<{ purchaseOrder: PurchaseOrder; bill: Bill }> {
+  await ready();
+  const pool = getPool();
+  const { rows: poRows } = await pool.query("SELECT * FROM purchase_orders WHERE id = $1 AND company_id = $2", [poId, COMPANY_ID]);
+  const po = poRows[0] as PurchaseOrder | undefined;
+  if (!po) throw new Error("Purchase order not found");
+
+  const today = new Date();
+  const due = new Date();
+  due.setDate(due.getDate() + 14);
+  const bill = await createBill({
+    supplierName: po.supplier_name,
+    category: "Purchase order",
+    billDate: today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    dueDate: due.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    total: po.total,
+  });
+  await pool.query("UPDATE bills SET source_purchase_order_id = $1 WHERE id = $2", [poId, bill.id]);
+  await pool.query("UPDATE purchase_orders SET status = 'converted_to_bill', converted_bill_id = $1 WHERE id = $2", [bill.id, poId]);
+  const { rows } = await pool.query("SELECT * FROM purchase_orders WHERE id = $1", [poId]);
+  return { purchaseOrder: rows[0] as PurchaseOrder, bill: { ...bill, source_purchase_order_id: poId } };
+}
+
+// ---------------------------------------------------------------------------
+// Inventory — signage, branded merchandise & equipment stock (Manage Inventory)
+// ---------------------------------------------------------------------------
+
+export type InventoryItem = {
+  id: string;
+  company_id: string;
+  sku: string;
+  name: string;
+  category: string;
+  quantity_on_hand: number;
+  reorder_level: number;
+  unit_cost: number;
+  sort_order: number;
+};
+
+export type InventoryMovement = {
+  id: string;
+  item_id: string;
+  change: number;
+  reason: string;
+  occurred_at: string;
+  sort_order: number;
+};
+
+export async function getInventoryItems(): Promise<InventoryItem[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM inventory_items WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as InventoryItem[];
+}
+
+export async function getInventoryMovements(itemId: string): Promise<InventoryMovement[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM inventory_movements WHERE item_id = $1 ORDER BY sort_order DESC", [itemId]);
+  return rows as InventoryMovement[];
+}
+
+/** Adjusts stock on hand and logs the movement in one step — the stock ledger is derived from movements, never edited directly. */
+export async function adjustStock(itemId: string, change: number, reason: string): Promise<InventoryItem> {
+  await ready();
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO inventory_movements (id, item_id, change, reason, occurred_at, sort_order)
+     VALUES ($1,$2,$3,$4,$5,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM inventory_movements WHERE item_id = $2))`,
+    [randomUUID(), itemId, change, reason, new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })]
+  );
+  const { rows } = await pool.query(
+    "UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + $1 WHERE id = $2 AND company_id = $3 RETURNING *",
+    [change, itemId, COMPANY_ID]
+  );
+  return rows[0] as InventoryItem;
+}
+
+// ---------------------------------------------------------------------------
+// Expense claims & mileage tracking (Claim Expenses, Mileage Tracking)
+// ---------------------------------------------------------------------------
+
+export type ExpenseClaim = {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  description: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  status: "submitted" | "approved" | "reimbursed" | "rejected";
+  sort_order: number;
+};
+
+export async function getExpenseClaims(): Promise<ExpenseClaim[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM expense_claims WHERE company_id = $1 ORDER BY sort_order DESC", [COMPANY_ID]);
+  return rows as ExpenseClaim[];
+}
+
+export async function createExpenseClaim(input: { employeeId: string; description: string; category: string; amount: number; expenseDate: string }): Promise<ExpenseClaim> {
+  await ready();
+  const pool = getPool();
+  const claimId = randomUUID();
+  await pool.query(
+    `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM expense_claims WHERE company_id = $2))`,
+    [claimId, COMPANY_ID, input.employeeId, input.description, input.category, input.amount, input.expenseDate]
+  );
+  const { rows } = await pool.query("SELECT * FROM expense_claims WHERE id = $1", [claimId]);
+  return rows[0] as ExpenseClaim;
+}
+
+export async function updateExpenseClaimStatus(id: string, status: ExpenseClaim["status"]): Promise<ExpenseClaim> {
+  await ready();
+  const pool = getPool();
+  if (status === "reimbursed") {
+    const { rows: claimRows } = await pool.query("SELECT * FROM expense_claims WHERE id = $1 AND company_id = $2", [id, COMPANY_ID]);
+    const claim = claimRows[0] as ExpenseClaim | undefined;
+    if (claim) {
+      const { rows: empRows } = await pool.query("SELECT name FROM employees WHERE id = $1", [claim.employee_id]);
+      const employeeName = (empRows[0]?.name as string | undefined) ?? "employee";
+      await pool.query(
+        `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, sort_order)
+         VALUES ($1,$2,$3,$4,$5,'debit','Expense reimbursement','unmatched',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+        [
+          randomUUID(),
+          COMPANY_ID,
+          new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+          `EXPENSE REIMBURSEMENT — ${employeeName.toUpperCase()}`,
+          claim.amount,
+        ]
+      );
+    }
+  }
+  const { rows } = await pool.query("UPDATE expense_claims SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
+  return rows[0] as ExpenseClaim;
+}
+
+export type MileageClaim = {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  trip_date: string;
+  from_location: string;
+  to_location: string;
+  miles: number;
+  rate_per_mile: number;
+  amount: number;
+  status: "submitted" | "approved" | "reimbursed";
+  sort_order: number;
+};
+
+const MILEAGE_RATE = 0.45; // HMRC AMAP rate, first 10,000 business miles
+
+export async function getMileageClaims(): Promise<MileageClaim[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM mileage_claims WHERE company_id = $1 ORDER BY sort_order DESC", [COMPANY_ID]);
+  return rows as MileageClaim[];
+}
+
+export async function createMileageClaim(input: { employeeId: string; tripDate: string; from: string; to: string; miles: number }): Promise<MileageClaim> {
+  await ready();
+  const pool = getPool();
+  const amount = Math.round(input.miles * MILEAGE_RATE * 100) / 100;
+  const claimId = randomUUID();
+  await pool.query(
+    `INSERT INTO mileage_claims (id, company_id, employee_id, trip_date, from_location, to_location, miles, rate_per_mile, amount, status, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM mileage_claims WHERE company_id = $2))`,
+    [claimId, COMPANY_ID, input.employeeId, input.tripDate, input.from, input.to, input.miles, MILEAGE_RATE, amount]
+  );
+  const { rows } = await pool.query("SELECT * FROM mileage_claims WHERE id = $1", [claimId]);
+  return rows[0] as MileageClaim;
+}
+
+export async function updateMileageClaimStatus(id: string, status: MileageClaim["status"]): Promise<MileageClaim> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("UPDATE mileage_claims SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
+  return rows[0] as MileageClaim;
+}
+
+// ---------------------------------------------------------------------------
+// Projects & time tracking (Track Projects)
+// ---------------------------------------------------------------------------
+
+export type Project = {
+  id: string;
+  company_id: string;
+  name: string;
+  client_name: string;
+  status: "active" | "completed" | "on_hold";
+  budget: number;
+  hourly_rate: number;
+  start_date: string;
+  sort_order: number;
+};
+
+export type ProjectTimeEntry = {
+  id: string;
+  project_id: string;
+  employee_id: string | null;
+  employee_name: string;
+  hours: number;
+  entry_date: string;
+  note: string | null;
+  sort_order: number;
+};
+
+export async function getProjects(): Promise<Project[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM projects WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as Project[];
+}
+
+export async function getProjectTimeEntries(projectId: string): Promise<ProjectTimeEntry[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM project_time_entries WHERE project_id = $1 ORDER BY sort_order DESC", [projectId]);
+  return rows as ProjectTimeEntry[];
+}
+
+export async function createProject(input: { name: string; clientName: string; budget: number; startDate: string }): Promise<Project> {
+  await ready();
+  const pool = getPool();
+  const projectId = randomUUID();
+  await pool.query(
+    `INSERT INTO projects (id, company_id, name, client_name, status, budget, hourly_rate, start_date, sort_order)
+     VALUES ($1,$2,$3,$4,'active',$5,45,$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM projects WHERE company_id = $2))`,
+    [projectId, COMPANY_ID, input.name, input.clientName, input.budget, input.startDate]
+  );
+  const { rows } = await pool.query("SELECT * FROM projects WHERE id = $1", [projectId]);
+  return rows[0] as Project;
+}
+
+export async function logProjectTime(input: { projectId: string; employeeId: string; hours: number; note: string | null }): Promise<ProjectTimeEntry> {
+  await ready();
+  const pool = getPool();
+  const { rows: empRows } = await pool.query("SELECT name FROM employees WHERE id = $1", [input.employeeId]);
+  const employeeName = (empRows[0]?.name as string | undefined) ?? "Unknown";
+  const entryId = randomUUID();
+  await pool.query(
+    `INSERT INTO project_time_entries (id, project_id, employee_id, employee_name, hours, entry_date, note, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM project_time_entries WHERE project_id = $2))`,
+    [
+      entryId,
+      input.projectId,
+      input.employeeId,
+      employeeName,
+      input.hours,
+      new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+      input.note,
+    ]
+  );
+  const { rows } = await pool.query("SELECT * FROM project_time_entries WHERE id = $1", [entryId]);
+  return rows[0] as ProjectTimeEntry;
+}
+
+export async function updateProjectStatus(id: string, status: Project["status"]): Promise<Project> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("UPDATE projects SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
+  return rows[0] as Project;
 }
