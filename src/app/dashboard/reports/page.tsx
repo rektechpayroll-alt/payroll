@@ -23,6 +23,11 @@ const REPORTS = [
     title: "Cost to company · 6 months",
     description: "Monthly cost to company alongside deals-closed and headcount indices.",
   },
+  {
+    href: "/api/reports/profit-and-loss",
+    title: "Profit & loss",
+    description: "Revenue from Verity Ledger, payroll cost and Purchasing/expense outgoings — computed live, not a separate ledger.",
+  },
 ];
 
 function DownloadIcon() {

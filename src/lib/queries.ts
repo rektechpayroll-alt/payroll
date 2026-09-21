@@ -404,6 +404,9 @@ export type Invoice = {
   vat_amount: number;
   total: number;
   notes: string | null;
+  currency: string;
+  fx_rate: number;
+  original_total: number | null;
   sort_order: number;
 };
 
@@ -452,6 +455,9 @@ export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]>
   return rows as InvoiceItem[];
 }
 
+/** Illustrative FX rates to GBP — real, stored, computed conversion math without a live rates API. Same table lib/db.ts's seed uses. */
+export const FX_RATES_TO_GBP: Record<string, number> = { GBP: 1, USD: 0.79, EUR: 0.855, AED: 0.215 };
+
 export type CreateInvoiceInput = {
   customerName: string;
   customerEmail: string | null;
@@ -459,25 +465,31 @@ export type CreateInvoiceInput = {
   dueDate: string;
   vatRate: number;
   notes: string | null;
+  currency?: string;
   items: Array<{ description: string; quantity: number; unitPrice: number }>;
 };
 
-/** Creates a draft invoice and its line items, computing subtotal/VAT/total server-side rather than trusting client arithmetic. */
+/** Creates a draft invoice and its line items, computing subtotal/VAT/total server-side rather than trusting client arithmetic. Line items are entered in `currency`; stored totals are always the GBP equivalent, with the original foreign total kept alongside for display. */
 export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
   await ready();
   const pool = getPool();
 
-  const subtotal = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
-  const vatAmount = Math.round(subtotal * (input.vatRate / 100) * 100) / 100;
-  const total = Math.round((subtotal + vatAmount) * 100) / 100;
+  const currency = input.currency ?? "GBP";
+  const fxRate = FX_RATES_TO_GBP[currency] ?? 1;
+  const originalSubtotal = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+  const originalVat = Math.round(originalSubtotal * (input.vatRate / 100) * 100) / 100;
+  const originalTotal = Math.round((originalSubtotal + originalVat) * 100) / 100;
+  const subtotal = Math.round(originalSubtotal * fxRate * 100) / 100;
+  const vatAmount = Math.round(originalVat * fxRate * 100) / 100;
+  const total = Math.round(originalTotal * fxRate * 100) / 100;
 
   const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM invoices WHERE company_id = $1", [COMPANY_ID]);
   const nextNumber = 1041 + Number(countRows[0]?.n ?? 0);
   const invoiceId = randomUUID();
 
   await pool.query(
-    `INSERT INTO invoices (id, company_id, invoice_number, customer_name, customer_email, issue_date, due_date, status, subtotal, vat_rate, vat_amount, total, notes, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,$9,$10,$11,$12,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM invoices WHERE company_id = $2))`,
+    `INSERT INTO invoices (id, company_id, invoice_number, customer_name, customer_email, issue_date, due_date, status, subtotal, vat_rate, vat_amount, total, notes, currency, fx_rate, original_total, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13,$14,$15,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM invoices WHERE company_id = $2))`,
     [
       invoiceId,
       COMPANY_ID,
@@ -491,6 +503,9 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
       vatAmount,
       total,
       input.notes,
+      currency,
+      fxRate,
+      currency === "GBP" ? null : originalTotal,
     ]
   );
 
@@ -735,6 +750,9 @@ export type Bill = {
   status: "unpaid" | "paid" | "void";
   total: number;
   source_purchase_order_id: string | null;
+  currency: string;
+  fx_rate: number;
+  original_total: number | null;
   sort_order: number;
 };
 
@@ -745,16 +763,27 @@ export async function getBills(): Promise<Bill[]> {
   return rows as Bill[];
 }
 
-export async function createBill(input: { supplierName: string; category: string | null; billDate: string; dueDate: string; total: number }): Promise<Bill> {
+/** `total` is entered in `currency` (defaulting to GBP); the stored `total` is always the GBP equivalent, with the original foreign amount kept in `original_total` for display. */
+export async function createBill(input: {
+  supplierName: string;
+  category: string | null;
+  billDate: string;
+  dueDate: string;
+  total: number;
+  currency?: string;
+}): Promise<Bill> {
   await ready();
   const pool = getPool();
+  const currency = input.currency ?? "GBP";
+  const fxRate = FX_RATES_TO_GBP[currency] ?? 1;
+  const gbpTotal = Math.round(input.total * fxRate * 100) / 100;
   const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM bills WHERE company_id = $1", [COMPANY_ID]);
   const nextNumber = 3001 + Number(countRows[0]?.n ?? 0);
   const billId = randomUUID();
   await pool.query(
-    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
-    [billId, COMPANY_ID, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, input.total]
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
+    [billId, COMPANY_ID, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total]
   );
   const { rows } = await pool.query("SELECT * FROM bills WHERE id = $1", [billId]);
   return rows[0] as Bill;
@@ -1106,4 +1135,107 @@ export async function updateProjectStatus(id: string, status: Project["status"])
   const pool = getPool();
   const { rows } = await pool.query("UPDATE projects SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, COMPANY_ID]);
   return rows[0] as Project;
+}
+
+// ---------------------------------------------------------------------------
+// Contacts — a real customer/supplier directory (Manage Contacts)
+// ---------------------------------------------------------------------------
+
+export type Contact = {
+  id: string;
+  company_id: string;
+  name: string;
+  type: "customer" | "supplier";
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
+  sort_order: number;
+};
+
+export async function getContacts(): Promise<Contact[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM contacts WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as Contact[];
+}
+
+export async function createContact(input: { name: string; type: Contact["type"]; email: string | null; phone: string | null }): Promise<Contact> {
+  await ready();
+  const pool = getPool();
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO contacts (id, company_id, name, type, email, phone, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM contacts WHERE company_id = $2))`,
+    [id, COMPANY_ID, input.name, input.type, input.email, input.phone]
+  );
+  const { rows } = await pool.query("SELECT * FROM contacts WHERE id = $1", [id]);
+  return rows[0] as Contact;
+}
+
+// ---------------------------------------------------------------------------
+// Fixed assets (Fixed Assets Management)
+// ---------------------------------------------------------------------------
+
+export type FixedAsset = {
+  id: string;
+  company_id: string;
+  name: string;
+  category: string;
+  purchase_date: string;
+  purchase_cost: number;
+  useful_life_years: number;
+  sort_order: number;
+};
+
+export async function getFixedAssets(): Promise<FixedAsset[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM fixed_assets WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as FixedAsset[];
+}
+
+export async function createFixedAsset(input: { name: string; category: string; purchaseDate: string; purchaseCost: number; usefulLifeYears: number }): Promise<FixedAsset> {
+  await ready();
+  const pool = getPool();
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO fixed_assets (id, company_id, name, category, purchase_date, purchase_cost, useful_life_years, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM fixed_assets WHERE company_id = $2))`,
+    [id, COMPANY_ID, input.name, input.category, input.purchaseDate, input.purchaseCost, input.usefulLifeYears]
+  );
+  const { rows } = await pool.query("SELECT * FROM fixed_assets WHERE id = $1", [id]);
+  return rows[0] as FixedAsset;
+}
+
+// ---------------------------------------------------------------------------
+// Budget lines (Budgeting)
+// ---------------------------------------------------------------------------
+
+export type BudgetLine = {
+  id: string;
+  company_id: string;
+  category: string;
+  period_label: string;
+  budgeted_amount: number;
+  sort_order: number;
+};
+
+export async function getBudgetLines(): Promise<BudgetLine[]> {
+  await ready();
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT * FROM budget_lines WHERE company_id = $1 ORDER BY sort_order ASC", [COMPANY_ID]);
+  return rows as BudgetLine[];
+}
+
+export async function createBudgetLine(input: { category: string; periodLabel: string; budgetedAmount: number }): Promise<BudgetLine> {
+  await ready();
+  const pool = getPool();
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO budget_lines (id, company_id, category, period_label, budgeted_amount, sort_order)
+     VALUES ($1,$2,$3,$4,$5,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM budget_lines WHERE company_id = $2))`,
+    [id, COMPANY_ID, input.category, input.periodLabel, input.budgetedAmount]
+  );
+  const { rows } = await pool.query("SELECT * FROM budget_lines WHERE id = $1", [id]);
+  return rows[0] as BudgetLine;
 }

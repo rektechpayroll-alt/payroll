@@ -161,7 +161,12 @@ export function PurchasingHub({
                     <div className="mt-1 text-[12px] text-[var(--ink-muted)]">Billed {b.bill_date} &middot; due {b.due_date}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-num text-[14px] font-semibold">{gbp(b.total)}</span>
+                    <span className="text-right">
+                      <span className="font-num block text-[14px] font-semibold">{gbp(b.total)}</span>
+                      {b.currency !== "GBP" && b.original_total != null && (
+                        <span className="font-num block text-[10.5px] text-[var(--ink-muted)]">{b.currency} {b.original_total.toFixed(2)}</span>
+                      )}
+                    </span>
                     {b.status === "unpaid" && (
                       <button disabled={busyId === b.id} onClick={() => payBill(b.id)} className="rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-[12px] font-semibold hover:bg-[var(--surface-2)] disabled:opacity-50">
                         Pay bill
@@ -240,11 +245,14 @@ export function PurchasingHub({
   );
 }
 
+const CURRENCIES = ["GBP", "USD", "EUR", "AED"] as const;
+
 function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void; onCancel: () => void }) {
   const [supplierName, setSupplierName] = useState("");
   const [category, setCategory] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [total, setTotal] = useState("");
+  const [currency, setCurrency] = useState<string>("GBP");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -258,7 +266,7 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
       const res = await fetch("/api/purchasing/bills/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total) }),
+        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total), currency }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -274,7 +282,12 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
         <input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Supplier name" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-2" />
         <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category (optional)" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="Due date, e.g. 5 Oct 2026" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
-        <input value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Total £" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-4" />
+        <input value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Total" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-3" />
+        <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]">
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
       </div>
       <div className="mt-3.5 flex items-center justify-end gap-2">
         {error && <span className="mr-auto text-[12px] font-semibold text-[var(--critical-ink)]">{error}</span>}

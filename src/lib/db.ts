@@ -329,6 +329,37 @@ async function createSchema(): Promise<void> {
       note TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS fixed_assets (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      purchase_date TEXT NOT NULL,
+      purchase_cost DOUBLE PRECISION NOT NULL,
+      useful_life_years DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS budget_lines (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      category TEXT NOT NULL,
+      period_label TEXT NOT NULL,
+      budgeted_amount DOUBLE PRECISION NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // Additive migrations for databases created before this schema revision —
@@ -341,6 +372,12 @@ async function createSchema(): Promise<void> {
     ALTER TABLE companies ADD COLUMN IF NOT EXISTS approval_mode TEXT NOT NULL DEFAULT 'manual';
     ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_id TEXT REFERENCES employees(id);
     ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS matched_bill_id TEXT REFERENCES bills(id);
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'GBP';
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS fx_rate DOUBLE PRECISION NOT NULL DEFAULT 1;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS original_total DOUBLE PRECISION;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'GBP';
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS fx_rate DOUBLE PRECISION NOT NULL DEFAULT 1;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS original_total DOUBLE PRECISION;
   `);
 }
 
@@ -356,6 +393,7 @@ async function seed(): Promise<void> {
     await seedPriorRun(companyId);
     await seedLedger(companyId);
     await seedBusinessOps(companyId);
+    await seedFinanceExtras(companyId);
     return;
   }
 
@@ -517,6 +555,7 @@ async function seed(): Promise<void> {
   await seedPriorRun(companyId);
   await seedLedger(companyId);
   await seedBusinessOps(companyId);
+  await seedFinanceExtras(companyId);
 }
 
 function emailFor(name: string): string {
@@ -1250,6 +1289,132 @@ async function seedProjects(companyId: string): Promise<void> {
       );
     }
   }
+}
+
+/** A small, clearly-illustrative FX rate table (to GBP) — real functionality (stored, computed, displayed) without wiring a live rates API, same honesty pattern as the rest of the demo's numbers. */
+const FX_RATES_TO_GBP: Record<string, number> = { GBP: 1, USD: 0.79, EUR: 0.855, AED: 0.215 };
+
+async function seedFinanceExtras(companyId: string): Promise<void> {
+  await seedContacts(companyId);
+  await seedFixedAssets(companyId);
+  await seedBudgetLines(companyId);
+  await seedMultiCurrencySamples(companyId);
+}
+
+async function seedContacts(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM contacts WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  // Names match the customer_name/supplier_name strings already used on invoices/quotes/
+  // bills/POs — balances are computed by matching on name rather than a new FK column, to
+  // avoid a riskier migration across four already-shipped tables for a demo-scale feature.
+  const contacts: Array<{ name: string; type: "customer" | "supplier"; email: string }> = [
+    { name: "Bellcourt Estates Ltd", type: "customer", email: "accounts@bellcourtestates.co.uk" },
+    { name: "Kestrel Holdings", type: "customer", email: "finance@kestrelholdings.com" },
+    { name: "Marlow & Co", type: "customer", email: "ap@marlowandco.co.uk" },
+    { name: "Thornfield Residential", type: "customer", email: "accounts@thornfieldresidential.co.uk" },
+    { name: "Ashford Living", type: "customer", email: "hello@ashfordliving.co.uk" },
+    { name: "Riverside Quarter MC", type: "customer", email: "directors@riversidequartermc.co.uk" },
+    { name: "Al Manara Investments", type: "customer", email: "finance@almanarainvestments.ae" },
+    { name: "Rightmove", type: "supplier", email: "billing@rightmove.co.uk" },
+    { name: "Zoopla", type: "supplier", email: "billing@zoopla.co.uk" },
+    { name: "Harrow Print & Signage", type: "supplier", email: "orders@harrowprint.co.uk" },
+    { name: "Officeworks Direct", type: "supplier", email: "sales@officeworksdirect.co.uk" },
+    { name: "PropTech Europe GmbH", type: "supplier", email: "billing@proptecheurope.de" },
+  ];
+
+  for (let i = 0; i < contacts.length; i++) {
+    const c = contacts[i];
+    await pool.query(
+      `INSERT INTO contacts (id, company_id, name, type, email, sort_order) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [randomUUID(), companyId, c.name, c.type, c.email, i]
+    );
+  }
+}
+
+async function seedFixedAssets(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM fixed_assets WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const assets: Array<{ name: string; category: string; date: string; cost: number; life: number }> = [
+    { name: "Company vehicle — Ford Transit Connect (viewings)", category: "Vehicles", date: "1 Jan 2024", cost: 24000, life: 5 },
+    { name: "Office IT — 15x laptops & monitors", category: "IT equipment", date: "1 Sep 2025", cost: 13500, life: 3 },
+    { name: "Reception & office furniture", category: "Furniture & fixtures", date: "1 Mar 2022", cost: 8200, life: 7 },
+    { name: "Office photocopier / printer", category: "Equipment", date: "1 Jun 2023", cost: 3600, life: 4 },
+  ];
+  for (let i = 0; i < assets.length; i++) {
+    const a = assets[i];
+    await pool.query(
+      `INSERT INTO fixed_assets (id, company_id, name, category, purchase_date, purchase_cost, useful_life_years, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [randomUUID(), companyId, a.name, a.category, a.date, a.cost, a.life, i]
+    );
+  }
+}
+
+async function seedBudgetLines(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query("SELECT id FROM budget_lines WHERE company_id = $1 LIMIT 1", [companyId]);
+  if (existing.rowCount) return;
+
+  const lines: Array<{ category: string; budgeted: number }> = [
+    { category: "Marketing & portals", budgeted: 1200 },
+    { category: "Signage & print", budgeted: 500 },
+    { category: "Client entertainment", budgeted: 150 },
+    { category: "Maintenance & repairs", budgeted: 300 },
+    { category: "Marketing", budgeted: 200 }, // deliberately over — Farah's £250 ad-boost claim
+    { category: "Travel & subsistence", budgeted: 400 }, // deliberately over — mileage + fuel
+    { category: "Rent", budgeted: 1500 },
+    { category: "Software", budgeted: 100 },
+  ];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    await pool.query(
+      `INSERT INTO budget_lines (id, company_id, category, period_label, budgeted_amount, sort_order) VALUES ($1,$2,$3,'Q3 2026',$4,$5)`,
+      [randomUUID(), companyId, l.category, l.budgeted, i]
+    );
+  }
+}
+
+/** One real multi-currency invoice and one real multi-currency bill — enough to demonstrate the conversion math actually works, without inventing a full second currency ledger. */
+async function seedMultiCurrencySamples(companyId: string): Promise<void> {
+  const pool = getPool();
+  const existing = await pool.query(
+    "SELECT id FROM invoices WHERE company_id = $1 AND currency <> 'GBP' LIMIT 1",
+    [companyId]
+  );
+  if (existing.rowCount) return;
+
+  const usdRate = FX_RATES_TO_GBP.USD;
+  const usdSubtotal = 3800.0;
+  const usdVat = Math.round(usdSubtotal * 0.2 * 100) / 100;
+  const usdOriginalTotal = Math.round((usdSubtotal + usdVat) * 100) / 100;
+  const usdGbpTotal = Math.round(usdOriginalTotal * usdRate * 100) / 100;
+  const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM invoices WHERE company_id = $1", [companyId]);
+  const invoiceNumber = 1041 + Number(countRows[0]?.n ?? 0);
+  const usdInvoiceId = randomUUID();
+  await pool.query(
+    `INSERT INTO invoices (id, company_id, invoice_number, customer_name, customer_email, issue_date, due_date, status, subtotal, vat_rate, vat_amount, total, currency, fx_rate, original_total, sort_order)
+     VALUES ($1,$2,$3,'Al Manara Investments','finance@almanarainvestments.ae','5 Sep 2026','19 Sep 2026','sent',$4,20,$5,$6,'USD',$7,$8,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM invoices WHERE company_id = $2))`,
+    [usdInvoiceId, companyId, `INV-${invoiceNumber}`, usdSubtotal * usdRate, usdVat * usdRate, usdGbpTotal, usdRate, usdOriginalTotal]
+  );
+  await pool.query(
+    `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, amount, sort_order) VALUES ($1,$2,'Annual portfolio review — Dubai Marina units',1,$3,$3,0)`,
+    [randomUUID(), usdInvoiceId, usdSubtotal]
+  );
+
+  const eurRate = FX_RATES_TO_GBP.EUR;
+  const eurOriginalTotal = 450.0;
+  const eurGbpTotal = Math.round(eurOriginalTotal * eurRate * 100) / 100;
+  const { rows: billCountRows } = await pool.query("SELECT COUNT(*) as n FROM bills WHERE company_id = $1", [companyId]);
+  const billNumber = 3001 + Number(billCountRows[0]?.n ?? 0);
+  await pool.query(
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, sort_order)
+     VALUES ($1,$2,$3,'PropTech Europe GmbH','Software','8 Sep 2026','22 Sep 2026','unpaid',$4,'EUR',$5,$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
+    [randomUUID(), companyId, `BILL-${billNumber}`, eurGbpTotal, eurRate, eurOriginalTotal]
+  );
 }
 
 /** Ensures the schema exists and the demo company is seeded. Safe to call on every request — idempotent, and only does real work once per cold start. */

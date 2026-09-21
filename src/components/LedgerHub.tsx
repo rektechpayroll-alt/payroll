@@ -284,7 +284,12 @@ export function LedgerHub({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-num text-[14px] font-semibold">{gbp(inv.total)}</span>
+                    <span className="text-right">
+                      <span className="font-num block text-[14px] font-semibold">{gbp(inv.total)}</span>
+                      {inv.currency !== "GBP" && inv.original_total != null && (
+                        <span className="font-num block text-[10.5px] text-[var(--ink-muted)]">{inv.currency} {inv.original_total.toFixed(2)}</span>
+                      )}
+                    </span>
                     {inv.status === "draft" && (
                       <button
                         disabled={busyId === inv.id}
@@ -493,10 +498,13 @@ export function LedgerHub({
   );
 }
 
+const CURRENCIES = ["GBP", "USD", "EUR", "AED"] as const;
+
 function NewInvoiceForm({ onCreated, onCancel }: { onCreated: (invoice: Invoice) => void; onCancel: () => void }) {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [currency, setCurrency] = useState<string>("GBP");
   const [items, setItems] = useState<NewItem[]>([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -522,7 +530,7 @@ function NewInvoiceForm({ onCreated, onCancel }: { onCreated: (invoice: Invoice)
       const res = await fetch("/api/ledger/invoices/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerName, customerEmail: customerEmail || null, dueDate, vatRate: 20, items: cleanItems }),
+        body: JSON.stringify({ customerName, customerEmail: customerEmail || null, dueDate, vatRate: 20, currency, items: cleanItems }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -546,6 +554,8 @@ function NewInvoiceForm({ onCreated, onCancel }: { onCreated: (invoice: Invoice)
       dateValue={dueDate}
       setDateValue={setDueDate}
       datePlaceholder="e.g. 24 Sep 2026"
+      currency={currency}
+      setCurrency={setCurrency}
       items={items}
       updateItem={updateItem}
       setItems={setItems}
@@ -637,6 +647,8 @@ function LineItemForm({
   dateValue,
   setDateValue,
   datePlaceholder,
+  currency,
+  setCurrency,
   items,
   updateItem,
   setItems,
@@ -657,6 +669,8 @@ function LineItemForm({
   dateValue: string;
   setDateValue: (v: string) => void;
   datePlaceholder: string;
+  currency?: string;
+  setCurrency?: (v: string) => void;
   items: NewItem[];
   updateItem: (index: number, patch: Partial<NewItem>) => void;
   setItems: Dispatch<SetStateAction<NewItem[]>>;
@@ -698,6 +712,20 @@ function LineItemForm({
             className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] font-normal text-[var(--ink)]"
           />
         </label>
+        {setCurrency && (
+          <label className="flex flex-col gap-1 text-[12.5px] font-semibold text-[var(--ink-secondary)]">
+            Currency
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] font-normal text-[var(--ink)]"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="mt-4">
@@ -746,9 +774,20 @@ function LineItemForm({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-3.5">
         <div className="text-[12.5px] text-[var(--ink-secondary)]">
-          Subtotal <span className="font-num font-semibold">{gbp(subtotal)}</span> &middot; VAT (20%){" "}
-          <span className="font-num font-semibold">{gbp(vat)}</span> &middot; Total{" "}
-          <span className="font-num font-semibold text-[var(--ink)]">{gbp(subtotal + vat)}</span>
+          {currency && currency !== "GBP" ? (
+            <>
+              Subtotal <span className="font-num font-semibold">{currency} {(subtotal).toFixed(2)}</span> &middot; VAT (20%){" "}
+              <span className="font-num font-semibold">{currency} {vat.toFixed(2)}</span> &middot; Total{" "}
+              <span className="font-num font-semibold text-[var(--ink)]">{currency} {(subtotal + vat).toFixed(2)}</span>
+              <span className="ml-1 text-[var(--ink-muted)]">(converted to GBP at an illustrative rate on save)</span>
+            </>
+          ) : (
+            <>
+              Subtotal <span className="font-num font-semibold">{gbp(subtotal)}</span> &middot; VAT (20%){" "}
+              <span className="font-num font-semibold">{gbp(vat)}</span> &middot; Total{" "}
+              <span className="font-num font-semibold text-[var(--ink)]">{gbp(subtotal + vat)}</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {error && <span className="text-[12px] font-semibold text-[var(--critical-ink)]">{error}</span>}

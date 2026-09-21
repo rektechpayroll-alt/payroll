@@ -3,8 +3,9 @@ import { StatRow, StatTile, MetaRow } from "@/components/StatTile";
 import { ReviewPanel } from "@/components/ReviewPanel";
 import { Sparkline } from "@/components/Sparkline";
 import { AuditList } from "@/components/AuditList";
+import { BusinessSnapshot } from "@/components/BusinessSnapshot";
 import { gbp, gbpCompact } from "@/lib/format";
-import { getCompany, getCurrentRun, getLinesForRun, getAuditLog, getCostTrend } from "@/lib/queries";
+import { getCompany, getCurrentRun, getLinesForRun, getAuditLog, getCostTrend, getInvoices, getBills } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,9 @@ export default async function DashboardPage() {
   const lines = await getLinesForRun(run.id);
   const audit = await getAuditLog();
   const trend = await getCostTrend();
+  const [invoices, bills] = await Promise.all([getInvoices(), getBills()]);
+  const arOutstanding = invoices.filter((i) => i.status === "sent").reduce((sum, i) => sum + i.total, 0);
+  const apOutstanding = bills.filter((b) => b.status === "unpaid").reduce((sum, b) => sum + b.total, 0);
 
   const headroom = run.connected_balance - run.net_pay;
   const lastMonthCost = trend[trend.length - 2]?.cost_to_company ?? run.gross_pay;
@@ -47,6 +51,8 @@ export default async function DashboardPage() {
       </div>
 
       {run.mid_month_note && <Banner title="Mid-month check already ran · 14 Sep" text={run.mid_month_note} />}
+
+      <BusinessSnapshot bankBalance={run.connected_balance} arOutstanding={arOutstanding} apOutstanding={apOutstanding} />
 
       <StatRow>
         <StatTile

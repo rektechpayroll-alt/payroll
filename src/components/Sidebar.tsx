@@ -6,7 +6,26 @@ import { usePathname } from "next/navigation";
 function NavIcon({
   name,
 }: {
-  name: "grid" | "trend" | "people" | "doc" | "card" | "gear" | "flask" | "spark" | "diff" | "ledger" | "cart" | "box" | "receipt" | "briefcase";
+  name:
+    | "grid"
+    | "trend"
+    | "people"
+    | "doc"
+    | "card"
+    | "gear"
+    | "flask"
+    | "spark"
+    | "diff"
+    | "ledger"
+    | "cart"
+    | "box"
+    | "receipt"
+    | "briefcase"
+    | "address"
+    | "bank"
+    | "pie"
+    | "wave"
+    | "asset";
 }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8 } as const;
   switch (name) {
@@ -110,6 +129,41 @@ function NavIcon({
           <path d="M8.5 7.5V5.8a1.3 1.3 0 0 1 1.3-1.3h4.4a1.3 1.3 0 0 1 1.3 1.3V7.5M3 12.5h18" />
         </svg>
       );
+    case "address":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <rect x="3" y="4" width="18" height="16" rx="1.8" />
+          <circle cx="9" cy="10.5" r="2.2" />
+          <path d="M5.8 16.5c.7-2 2-3 3.2-3s2.5 1 3.2 3M14.5 9h4M14.5 12.5h4" />
+        </svg>
+      );
+    case "bank":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M3 10l9-6 9 6M4.5 10v9M9.5 10v9M14.5 10v9M19.5 10v9M3 19h18" />
+        </svg>
+      );
+    case "pie":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M12 3a9 9 0 1 0 9 9h-9V3Z" />
+          <path d="M15 3.5A9 9 0 0 1 20.5 9H15V3.5Z" />
+        </svg>
+      );
+    case "wave":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <path d="M3 12c1.6-2.5 3.2-2.5 4.8 0s3.2 2.5 4.8 0 3.2-2.5 4.8 0 3.2 2.5 4.8 0" />
+          <path d="M3 17c1.6-2.5 3.2-2.5 4.8 0s3.2 2.5 4.8 0 3.2-2.5 4.8 0 3.2 2.5 4.8 0" />
+        </svg>
+      );
+    case "asset":
+      return (
+        <svg viewBox="0 0 24 24" {...common} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none">
+          <rect x="3" y="4.5" width="18" height="12" rx="1.6" />
+          <path d="M8.5 20h7M12 16.5V20" />
+        </svg>
+      );
   }
 }
 
@@ -122,9 +176,13 @@ const NAV = [
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
   { href: "/dashboard/ledger", label: "Verity Ledger", icon: "ledger" as const },
   { href: "/dashboard/purchasing", label: "Purchasing", icon: "cart" as const },
+  { href: "/dashboard/contacts", label: "Contacts", icon: "address" as const },
   { href: "/dashboard/inventory", label: "Inventory", icon: "box" as const },
   { href: "/dashboard/expenses", label: "Expenses", icon: "receipt" as const },
   { href: "/dashboard/projects", label: "Projects", icon: "briefcase" as const },
+  { href: "/dashboard/assets", label: "Fixed Assets", icon: "asset" as const },
+  { href: "/dashboard/budget", label: "Budget", icon: "pie" as const },
+  { href: "/dashboard/cashflow", label: "Cash Flow", icon: "wave" as const },
   { href: "/dashboard/reports", label: "Reports", icon: "doc" as const },
   { href: "/dashboard/integrations", label: "Integrations", icon: "card" as const },
   { href: "/dashboard/settings", label: "Settings", icon: "gear" as const },

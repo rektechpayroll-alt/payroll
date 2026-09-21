@@ -263,4 +263,76 @@ export const PILLARS: Pillar[] = [
       "The same “budget headroom” idea the Profitability page already applies to payroll, extended to client project work: log hours against a project, and Verity converts them to cost at that project's hourly rate in real time, flagging anything that's gone over budget rather than leaving it to be discovered at invoicing time. Live at /dashboard/projects.",
     group: "Beyond payroll",
   },
+  {
+    letter: "AD",
+    title: "Manage Contacts",
+    summary: "One directory of every customer and supplier across Verity Ledger and Purchasing, each with a live balance.",
+    detail:
+      "Rather than a separate address book someone keeps in sync by hand, Contacts computes each customer's outstanding balance from open invoices and each supplier's from unpaid bills — live, matched against the same names those modules already store. Live at /dashboard/contacts.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AE",
+    title: "Multi-Currency Accounting",
+    summary: "Invoice or bill in USD, EUR or AED — stored and reported in GBP, with the original foreign amount kept alongside.",
+    detail:
+      "A landlord client based in Dubai, or a European software supplier, doesn't invoice in GBP. Verity Ledger and Purchasing both support entering an invoice or bill in a foreign currency; the GBP-equivalent total is computed and stored (so every other report keeps working in one currency), while the original foreign amount stays visible for reference. FX rates are an illustrative fixed table, not a live feed — the same honesty pattern the rest of the demo's numbers already follow.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AF",
+    title: "Financial Reporting",
+    summary: "A real Profit & Loss, computed live from Verity Ledger, Purchasing, payroll and Expenses — not a separate ledger.",
+    detail:
+      "Revenue from invoiced work, payroll's full cost to company, and Purchasing/expense outgoings roll up into a single P&L on demand, downloadable as CSV from the Reports page. Every figure traces back to a real row in a real module — there's no second set of books to keep reconciled.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AG",
+    title: "Accounting Dashboard",
+    summary: "Bank balance, money owed to you and money you owe, at a glance on the main dashboard.",
+    detail:
+      "A compact snapshot — bank balance, AR outstanding, AP outstanding, net position — sits at the top of the payroll dashboard, each figure linking straight into the module that owns it (Cash Flow, Verity Ledger, Purchasing, Contacts). The same idea Xero's own dashboard leads with, but reading Verity's real data instead of a demo screenshot.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AH",
+    title: "Fixed Assets Management",
+    summary: "A real asset register with straight-line depreciation, computed as of today rather than updated once a year.",
+    detail:
+      "Company vehicles, office IT, furniture and equipment are tracked with their purchase cost and useful life; net book value and accumulated depreciation are computed live rather than stored and going stale. Live at /dashboard/assets.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AI",
+    title: "Budgeting",
+    summary: "Category budgets checked live against real spend across Purchasing and Expenses — no month-end reconciliation.",
+    detail:
+      "A budget line's “actual” is computed from real bills, expense claims, mileage and standalone categorised bank debits as they happen, not typed in from a spreadsheet at month end. Live at /dashboard/budget.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AJ",
+    title: "Cash Flow Forecasting",
+    summary: "An AR/AP aging projection — real outstanding invoices and bills, plus the current payroll run's own cost.",
+    detail:
+      "The “Predictive cash-flow alerts tied to payroll” idea from the forward-looking list, now shipped: an aging-bucket forecast (overdue, next 30/60/90+ days) built from open invoices, unpaid bills, and the current payroll run's cost if its payday falls in range, with a running balance projected forward from the connected account. Live at /dashboard/cashflow.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AK",
+    title: "Real authentication & role-based login",
+    summary: "This demo has no login system at all yet — every page is open. On the roadmap.",
+    detail:
+      "Pillar M promises enterprise SSO/SCIM at the 1,000+ tier, but that assumes a real authentication layer exists underneath it — this prototype currently has none; every dashboard page is reachable without signing in. Building real login (and the permissions that depend on it) is a foundational change, not a bolt-on, so it stays an explicit roadmap item rather than a faked “Log in” button that doesn't check anything.",
+    group: "Beyond payroll",
+  },
+  {
+    letter: "AL",
+    title: "Smart document capture & file storage",
+    summary: "Real OCR receipt/bill capture and document storage — needs a vision-model API and blob storage this demo doesn't wire up. On the roadmap.",
+    detail:
+      "The cross-system ingestion agent (pillar C) already auto-maps structured exports; genuinely reading a photographed receipt or a scanned bill needs a real vision-model call and somewhere durable to store the file, neither of which is wired into this prototype. Faking OCR with a text box that just pretends to “read” an image would break the honesty this project has kept everywhere else, so it stays roadmap.",
+    group: "Beyond payroll",
+  },
 ];
