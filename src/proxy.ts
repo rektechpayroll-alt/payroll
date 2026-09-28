@@ -5,9 +5,11 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // The actual product — /dashboard and everything it talks to — requires a signed-in
 // session.
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/api(.*)", "/onboarding(.*)", "/admin(.*)"]);
+// Scheduled jobs are called by Vercel Cron, not a signed-in user; they check CRON_SECRET themselves.
+const isCronRoute = createRouteMatcher(["/api/cron/(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) await auth.protect();
+  if (isProtectedRoute(req) && !isCronRoute(req)) await auth.protect();
 });
 
 export const config = {

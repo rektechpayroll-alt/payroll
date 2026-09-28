@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { auth, currentUser } from "@clerk/nextjs/server";
@@ -51,8 +52,31 @@ async function membershipsFor(userId: string): Promise<Membership[]> {
   return rows as Membership[];
 }
 
+/**
+ * Scheduled jobs (recurring invoices, reminders) have no signed-in user. They run each
+ * business's work inside runAsCompany(), which scopes every query to that one business
+ * exactly as a signed-in owner would be.
+ */
+const systemContext = new AsyncLocalStorage<{ companyId: string }>();
+
+export function runAsCompany<T>(companyId: string, fn: () => Promise<T>): Promise<T> {
+  return systemContext.run({ companyId }, fn);
+}
+
+/**
+ * The session for this request. A scheduled job's business is checked *before* the per-request
+ * cache: one job request works through many businesses, and must never reuse another's session.
+ */
+export async function getSession(): Promise<Session> {
+  const system = systemContext.getStore();
+  if (system) {
+    return { userId: "system", email: null, name: "Verity (automatic)", isAdmin: false, memberships: [], companyId: system.companyId, viewingAsAdmin: false };
+  }
+  return userSession();
+}
+
 /** Resolved once per request (React cache), then shared by every query in that request. */
-export const getSession = cache(async (): Promise<Session> => {
+const userSession = cache(async (): Promise<Session> => {
   const { userId } = await auth();
   if (!userId) throw new Error("Not signed in");
   await ready();

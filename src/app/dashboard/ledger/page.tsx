@@ -1,6 +1,7 @@
 import { getCompany, getInvoices, getBankTransactions, getQuotes, getJournals, getTrialBalance } from "@/lib/queries";
 import { withOverdueStatus, summarizeLedger, suggestMatches } from "@/lib/ledger";
 import { LedgerHub } from "@/components/LedgerHub";
+import { emailConfigProblem } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function LedgerPage() {
         </div>
       </div>
 
-      <LedgerHub initialInvoices={invoices} initialQuotes={quotes} transactions={transactions} summary={summary} suggestions={suggestions} journals={journals} trialBalance={trialBalance} />
+      <LedgerHub initialInvoices={invoices} initialQuotes={quotes} transactions={transactions} summary={summary} suggestions={suggestions} journals={journals} trialBalance={trialBalance} emailReady={!emailConfigProblem()} />
     </div>
   );
 }

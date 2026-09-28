@@ -631,6 +631,53 @@ async function createSchema(): Promise<void> {
       PRIMARY KEY (company_id, service)
     );
 
+    -- Invoicing (lib/invoicing): business details printed on invoices, recurring
+    -- templates, and a log of every invoice and reminder email.
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS address_line1 TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS address_line2 TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS city TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS postcode TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS contact_email TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_number TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER NOT NULL DEFAULT 30;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS reminders_enabled BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS reminder_days TEXT NOT NULL DEFAULT '1,7,14,30';
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_id TEXT;
+
+    CREATE TABLE IF NOT EXISTS recurring_invoices (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT,
+      items JSONB NOT NULL,
+      vat_rate DOUBLE PRECISION NOT NULL DEFAULT 20,
+      currency TEXT NOT NULL DEFAULT 'GBP',
+      frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly', 'quarterly', 'yearly')),
+      next_date DATE NOT NULL,
+      end_date DATE,
+      due_days INTEGER NOT NULL DEFAULT 30,
+      auto_send BOOLEAN NOT NULL DEFAULT false,
+      active BOOLEAN NOT NULL DEFAULT true,
+      anchor_day INTEGER,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_emails (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('invoice', 'reminder')),
+      reminder_step INTEGER,
+      recipient TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      provider_id TEXT,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS invoice_reminder_once ON invoice_emails (invoice_id, reminder_step) WHERE kind = 'reminder' AND status = 'sent';
+
     CREATE TABLE IF NOT EXISTS bank_rules (
       id TEXT PRIMARY KEY,
       company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

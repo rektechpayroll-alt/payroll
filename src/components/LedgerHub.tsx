@@ -65,6 +65,7 @@ export function LedgerHub({
   suggestions,
   journals,
   trialBalance,
+  emailReady = false,
 }: {
   initialInvoices: InvoiceWithStatus[];
   initialQuotes: Quote[];
@@ -73,6 +74,8 @@ export function LedgerHub({
   suggestions: Record<string, string>; // transactionId -> invoiceId
   journals: Journal[];
   trialBalance: TrialBalanceRow[];
+  /** Whether outgoing email is configured (RESEND_API_KEY / EMAIL_FROM). */
+  emailReady?: boolean;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"invoices" | "quotes" | "bank" | "journals">("invoices");
@@ -286,7 +289,30 @@ export function LedgerHub({
                       Issued {inv.issue_date} &middot; due {inv.due_date}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={`/api/invoices/pdf?id=${inv.id}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--ink-secondary)] hover:bg-[var(--surface-2)]"
+                    >
+                      PDF
+                    </a>
+                    {inv.status !== "void" && inv.status !== "paid" && (
+                      <button
+                        disabled={busyId === inv.id || !emailReady}
+                        title={emailReady ? (inv.customer_email ? `Email to ${inv.customer_email}` : "Add the customer's email first") : "Email isn't set up yet"}
+                        onClick={async () => {
+                          setBusyId(inv.id);
+                          const ok = await postOrReport(inv.isOverdue ? "/api/invoices/remind" : "/api/invoices/email", { id: inv.id, step: inv.daysOverdue });
+                          setBusyId(null);
+                          if (ok) router.refresh();
+                        }}
+                        className="rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--ink-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+                      >
+                        {inv.isOverdue ? "Send reminder" : inv.status === "draft" ? "Email & send" : "Email again"}
+                      </button>
+                    )}
                     <span className="text-right">
                       <span className="font-num block text-[14px] font-semibold">{gbp(inv.total)}</span>
                       {inv.currency !== "GBP" && inv.original_total != null && (

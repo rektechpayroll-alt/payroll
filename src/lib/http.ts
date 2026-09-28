@@ -4,10 +4,11 @@ import { LedgerError } from "./ledger/reports";
 import { PayRunError } from "./payroll/runs";
 import { RtiError } from "./rti/submissions";
 import { VatError } from "./vat/returns";
+import { InvoicingError } from "./invoicing/service";
 
 /** Expected, user-facing problems become a 400 with their message; anything else is logged and a 500. */
 export function errorResponse(e: unknown) {
-  if (e instanceof VatError || e instanceof BankError || e instanceof LedgerError || e instanceof PayRunError || e instanceof RtiError) {
+  if (e instanceof VatError || e instanceof InvoicingError || e instanceof BankError || e instanceof LedgerError || e instanceof PayRunError || e instanceof RtiError) {
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
   console.error(e);

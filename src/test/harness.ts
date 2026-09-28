@@ -30,11 +30,20 @@ export async function tenantMock() {
     );
     return rows;
   }
+  const { AsyncLocalStorage } = await import("node:async_hooks");
+  const system = new AsyncLocalStorage<{ companyId: string }>();
   return {
-    ACTIVE_COMPANY_COOKIE: "verity_company",
+    runAsCompany: <T,>(companyId: string, fn: () => Promise<T>) => system.run({ companyId }, fn),
     NoCompanyError,
-    getSession: async () => ({ ...testUser, memberships: await memberships(), viewingAsAdmin: false }),
+    ACTIVE_COMPANY_COOKIE: "verity_company",
+    getSession: async () => {
+      const s = system.getStore();
+      if (s) return { userId: "system", email: null, name: "Verity (automatic)", isAdmin: false, memberships: [], companyId: s.companyId, viewingAsAdmin: false };
+      return { ...testUser, memberships: await memberships(), viewingAsAdmin: false };
+    },
     currentCompanyId: async () => {
+      const s = system.getStore();
+      if (s) return s.companyId;
       if (!testUser.companyId) throw new NoCompanyError();
       return testUser.companyId;
     },

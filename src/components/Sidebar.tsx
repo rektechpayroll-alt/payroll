@@ -179,6 +179,7 @@ const NAV = [
   { href: "/dashboard/simulator", label: "Simulator", icon: "flask" as const },
   { href: "/dashboard/employees", label: "Employees", icon: "people" as const },
   { href: "/dashboard/ledger", label: "Verity Ledger", icon: "ledger" as const },
+  { href: "/dashboard/invoicing", label: "Invoicing", icon: "doc" as const },
   { href: "/dashboard/accounting", label: "Accounting", icon: "doc" as const },
   { href: "/dashboard/banking", label: "Banking", icon: "bank" as const },
   { href: "/dashboard/vat", label: "VAT", icon: "receipt" as const },
