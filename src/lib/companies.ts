@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getPool, ready, seedBlankCompany, seedSampleData } from "./db";
+import { backfillLedgers, getPool, ready, seedBlankCompany, seedSampleData } from "./db";
 import { getSession } from "./tenant";
 import type { PAY_SCHEDULES } from "./pay-schedules";
 
@@ -30,6 +30,7 @@ export async function createBusiness(input: NewBusinessInput): Promise<string> {
   );
   if (input.sampleData) {
     await seedSampleData(companyId);
+    await backfillLedgers(); // posts the sample invoices, bills, claims and assets into its books
   } else {
     await seedBlankCompany(companyId);
   }

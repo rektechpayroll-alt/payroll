@@ -8,6 +8,7 @@ import { FREQUENCY_LABELS } from "@/lib/payroll/engine";
 import { getPayrollSettings } from "@/lib/payroll/records";
 import { getPayRun, getPayslipLines } from "@/lib/payroll/runs";
 import { RtiSubmitForm } from "@/components/RtiSubmitForm";
+import { WagesPaidButton } from "@/components/WagesPaidButton";
 import { RtiSubmissionList } from "@/components/RtiSubmissionList";
 import { listRtiSubmissions, prepareFps, RtiError } from "@/lib/rti/submissions";
 import { rtiEnvironment } from "@/lib/rti/transport";
@@ -60,6 +61,11 @@ export default async function PayRunPage({ params }: { params: Promise<{ id: str
             >
               Download payments (CSV)
             </a>
+            {run.wages_paid_at ? (
+              <span className="rounded-lg bg-[var(--good-soft)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--good-ink)]">Wages paid {run.wages_paid_at}</span>
+            ) : (
+              <WagesPaidButton runId={run.id} />
+            )}
             {settings.bacs_sun && (
               <a
                 href={`/api/payroll/runs/${run.id}/payments?format=std18`}

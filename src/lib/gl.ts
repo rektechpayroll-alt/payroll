@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 
 /**
@@ -12,6 +12,8 @@ export type AccountType = "asset" | "liability" | "equity" | "income" | "expense
 
 /** UK small-business numbering (1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx income, 5–8xxx costs). */
 export const CHART_OF_ACCOUNTS: Array<{ code: string; name: string; type: AccountType }> = [
+  { code: "0010", name: "Fixed assets — cost", type: "asset" },
+  { code: "0011", name: "Fixed assets — accumulated depreciation", type: "asset" },
   { code: "1100", name: "Trade debtors", type: "asset" },
   { code: "1200", name: "Bank current account", type: "asset" },
   { code: "2100", name: "Trade creditors", type: "liability" },
@@ -19,12 +21,45 @@ export const CHART_OF_ACCOUNTS: Array<{ code: string; name: string; type: Accoun
   { code: "2210", name: "PAYE and NI payable", type: "liability" },
   { code: "2220", name: "Net wages payable", type: "liability" },
   { code: "2230", name: "Pension contributions payable", type: "liability" },
+  { code: "2250", name: "Employee expenses payable", type: "liability" },
+  { code: "3000", name: "Capital and opening balances", type: "equity" },
   { code: "3200", name: "Retained earnings", type: "equity" },
   { code: "4000", name: "Sales", type: "income" },
+  { code: "4900", name: "Other income", type: "income" },
+  { code: "5000", name: "Cost of sales", type: "expense" },
   { code: "7000", name: "Gross wages and salaries", type: "expense" },
   { code: "7006", name: "Employer's National Insurance", type: "expense" },
   { code: "7007", name: "Employer's pension contributions", type: "expense" },
+  { code: "7100", name: "Rent and rates", type: "expense" },
+  { code: "7200", name: "Utilities", type: "expense" },
+  { code: "7300", name: "Marketing and advertising", type: "expense" },
+  { code: "7400", name: "Travel and subsistence", type: "expense" },
+  { code: "7450", name: "Entertainment", type: "expense" },
+  { code: "7500", name: "Software and IT", type: "expense" },
+  { code: "7600", name: "Professional fees", type: "expense" },
+  { code: "7700", name: "Repairs and maintenance", type: "expense" },
+  { code: "7800", name: "Printing, postage and stationery", type: "expense" },
+  { code: "7900", name: "General expenses", type: "expense" },
+  { code: "8000", name: "Depreciation", type: "expense" },
 ];
+
+/** Picks the expense account for a free-text category ("Rent", "Software", "Travel & subsistence"…). */
+export function expenseAccountFor(category: string | null | undefined): string {
+  const c = (category ?? "").toLowerCase();
+  const rules: Array<[RegExp, string]> = [
+    [/rent|rates|lease/, "7100"],
+    [/utilit|electric|gas|water|energy|phone|broadband/, "7200"],
+    [/market|advert|promo/, "7300"],
+    [/travel|mileage|subsistence|train|taxi|hotel|fuel/, "7400"],
+    [/entertain|client meal/, "7450"],
+    [/software|saas|it\b|hosting|subscription|computer/, "7500"],
+    [/legal|accountan|professional|consult/, "7600"],
+    [/repair|maintenance/, "7700"],
+    [/print|signage|postage|stationery/, "7800"],
+    [/stock|inventory|cost of sales|materials/, "5000"],
+  ];
+  return rules.find(([re]) => re.test(c))?.[1] ?? "7900";
+}
 
 export const PAYROLL_ACCOUNTS = {
   grossWages: "7000",
@@ -47,6 +82,13 @@ export async function seedChartOfAccounts(pool: Pool, companyId: string): Promis
 }
 
 export type JournalLineInput = { accountCode: string; description: string; debit?: number; credit?: number };
+
+/** Fingerprint of a journal's content, so a changed source document is re-posted rather than ignored. */
+export function journalHash(date: string, lines: JournalLineInput[]): string {
+  return createHash("sha1")
+    .update(JSON.stringify([date, lines.map((l) => [l.accountCode, toPence(l.debit ?? 0), toPence(l.credit ?? 0)])]))
+    .digest("hex");
+}
 
 const toPence = (n: number) => Math.round(n * 100);
 
@@ -82,16 +124,16 @@ export async function postJournal(
     await client.query("BEGIN");
     const journalId = randomUUID();
     const inserted = await client.query(
-      `INSERT INTO gl_journals (id, company_id, journal_date, narration, source_type, source_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (company_id, source_type, source_id) DO NOTHING
+      `INSERT INTO gl_journals (id, company_id, journal_date, narration, source_type, source_id, content_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (company_id, source_type, source_id) WHERE reversed_by IS NULL AND reverses IS NULL DO NOTHING
        RETURNING id`,
-      [journalId, input.companyId, input.date, input.narration, input.sourceType, input.sourceId]
+      [journalId, input.companyId, input.date, input.narration, input.sourceType, input.sourceId, journalHash(input.date, input.lines)]
     );
     if (!inserted.rowCount) {
       await client.query("ROLLBACK");
       const { rows } = await pool.query(
-        "SELECT id FROM gl_journals WHERE company_id = $1 AND source_type = $2 AND source_id = $3",
+        "SELECT id FROM gl_journals WHERE company_id = $1 AND source_type = $2 AND source_id = $3 AND reversed_by IS NULL AND reverses IS NULL",
         [input.companyId, input.sourceType, input.sourceId]
       );
       return { journalId: rows[0].id, created: false };
@@ -106,6 +148,45 @@ export async function postJournal(
     }
     await client.query("COMMIT");
     return { journalId, created: true };
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Reverses a posted journal: posts the mirror image (debits ↔ credits) dated `date`, and marks
+ * the original as reversed so the same source can be posted afresh. Nothing is ever deleted.
+ */
+export async function reverseJournal(pool: Pool, companyId: string, journalId: string, date: string, reason: string): Promise<string | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      "SELECT * FROM gl_journals WHERE id = $1 AND company_id = $2 AND reversed_by IS NULL AND reverses IS NULL FOR UPDATE",
+      [journalId, companyId]
+    );
+    const original = rows[0];
+    if (!original) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const reversalId = randomUUID();
+    await client.query(
+      `INSERT INTO gl_journals (id, company_id, journal_date, narration, source_type, source_id, reverses)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [reversalId, companyId, date, `Reversal: ${original.narration} — ${reason}`, original.source_type, original.source_id, journalId]
+    );
+    await client.query(
+      `INSERT INTO gl_journal_lines (id, journal_id, account_code, description, debit, credit, sort_order)
+       SELECT md5(random()::text || id), $1, account_code, description, credit, debit, sort_order FROM gl_journal_lines WHERE journal_id = $2`,
+      [reversalId, journalId]
+    );
+    await client.query("UPDATE gl_journals SET reversed_by = $1 WHERE id = $2", [reversalId, journalId]);
+    await client.query("COMMIT");
+    return reversalId;
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;

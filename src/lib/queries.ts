@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
 import { postPayrollRunJournal, type AccountType } from "./gl";
+import { syncDepreciation, syncDocument } from "./ledger/posting";
 import { currentCompanyId, getSession } from "./tenant";
 import type { NiCategory, PayFrequency } from "./payroll/engine";
 
@@ -744,6 +745,7 @@ export async function updateInvoiceStatus(id: string, status: Invoice["status"])
     "UPDATE invoices SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *",
     [status, id, companyId]
   );
+  if (rows[0]) await syncDocument(pool, companyId, "invoice", id);
   return rows[0] as Invoice;
 }
 
@@ -774,6 +776,7 @@ export async function matchTransaction(
     `UPDATE invoices SET status = 'paid' WHERE id = $1 AND company_id = $2 RETURNING *`,
     [invoiceId, companyId]
   );
+  if (invRows[0]) await syncDocument(pool, companyId, "invoice", invoiceId);
   return { transaction: txnRows[0] as BankTransaction, invoice: invRows[0] as Invoice };
 }
 
@@ -793,6 +796,7 @@ export async function unmatchTransaction(transactionId: string): Promise<BankTra
   );
   if (invoiceId) {
     await pool.query(`UPDATE invoices SET status = 'sent' WHERE id = $1 AND company_id = $2`, [invoiceId, companyId]);
+    await syncDocument(pool, companyId, "invoice", invoiceId);
   }
   return rows[0] as BankTransaction;
 }
@@ -1015,6 +1019,7 @@ export async function createBill(input: {
      VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
     [billId, companyId, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total]
   );
+  await syncDocument(pool, companyId, "bill", billId);
   const { rows } = await pool.query("SELECT * FROM bills WHERE id = $1", [billId]);
   return rows[0] as Bill;
 }
@@ -1042,6 +1047,7 @@ export async function payBill(id: string): Promise<Bill> {
     ]
   );
   const { rows } = await pool.query("UPDATE bills SET status = 'paid' WHERE id = $1 AND company_id = $2 RETURNING *", [id, companyId]);
+  await syncDocument(pool, companyId, "bill", id);
   return rows[0] as Bill;
 }
 
@@ -1256,6 +1262,7 @@ export async function updateExpenseClaimStatus(id: string, status: ExpenseClaim[
     }
   }
   const { rows } = await pool.query("UPDATE expense_claims SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, companyId]);
+  if (rows[0]) await syncDocument(pool, companyId, "expense_claim", id);
   return rows[0] as ExpenseClaim;
 }
 
@@ -1304,6 +1311,7 @@ export async function updateMileageClaimStatus(id: string, status: MileageClaim[
   const companyId = await currentCompanyId();
   const pool = getPool();
   const { rows } = await pool.query("UPDATE mileage_claims SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, companyId]);
+  if (rows[0]) await syncDocument(pool, companyId, "mileage_claim", id);
   return rows[0] as MileageClaim;
 }
 
@@ -1472,6 +1480,8 @@ export async function createFixedAsset(input: { name: string; category: string; 
      VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM fixed_assets WHERE company_id = $2))`,
     [id, companyId, input.name, input.category, input.purchaseDate, input.purchaseCost, input.usefulLifeYears]
   );
+  await syncDocument(pool, companyId, "fixed_asset", id);
+  await syncDepreciation(pool, companyId);
   const { rows } = await pool.query("SELECT * FROM fixed_assets WHERE id = $1", [id]);
   return rows[0] as FixedAsset;
 }
@@ -1528,6 +1538,9 @@ export type Journal = {
   journal_date: string;
   narration: string;
   source_type: string;
+  /** Set when this journal has been reversed, or is itself a reversal. */
+  reversed_by: string | null;
+  reverses: string | null;
   lines: JournalLine[];
 };
 
@@ -1536,8 +1549,8 @@ export async function getJournals(): Promise<Journal[]> {
   const companyId = await currentCompanyId();
   const pool = getPool();
   const { rows: journals } = await pool.query(
-    `SELECT id, to_char(journal_date, 'YYYY-MM-DD') AS journal_date, narration, source_type
-     FROM gl_journals WHERE company_id = $1 ORDER BY journal_date DESC, created_at DESC`,
+    `SELECT id, to_char(journal_date, 'YYYY-MM-DD') AS journal_date, narration, source_type, reversed_by, reverses
+     FROM gl_journals WHERE company_id = $1 ORDER BY journal_date DESC, created_at DESC LIMIT 200`,
     [companyId]
   );
   if (!journals.length) return [];

@@ -26,7 +26,7 @@ const REPORTS = [
   {
     href: "/api/reports/profit-and-loss",
     title: "Profit & loss",
-    description: "Revenue from Verity Ledger, payroll cost and Purchasing/expense outgoings — computed live, not a separate ledger.",
+    description: "From the general ledger, this tax year to date. For other periods and the balance sheet, see Accounting.",
   },
 ];
 

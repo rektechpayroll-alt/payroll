@@ -548,6 +548,7 @@ export type PayRunSummary = {
   total_ssp: number;
   statutory_recovered: number;
   employment_allowance_used: number;
+  wages_paid_at: string | null;
   tax_year: string | null;
   tax_period: number | null;
   line_count: number;
@@ -559,7 +560,7 @@ export async function listPayRuns(): Promise<PayRunSummary[]> {
     `SELECT pr.id, pr.period_label, pr.pay_period, to_char(pr.pay_date, 'YYYY-MM-DD') AS pay_date, pr.frequency, pr.status, pr.source,
             pr.gross_pay, pr.net_pay, pr.employer_ni, pr.employer_pension, pr.total_tax, pr.total_employee_ni,
             pr.total_employee_pension, pr.total_student_loan, pr.total_statutory_pay, pr.total_ssp, pr.statutory_recovered,
-            pr.employment_allowance_used, pr.tax_year, pr.tax_period,
+            pr.employment_allowance_used, to_char(pr.wages_paid_at, 'YYYY-MM-DD') AS wages_paid_at, pr.tax_year, pr.tax_period,
             (SELECT COUNT(*)::int FROM payroll_lines pl WHERE pl.run_id = pr.id) AS line_count
      FROM payroll_runs pr WHERE pr.company_id = $1 ORDER BY pr.created_at DESC`,
     [await currentCompanyId()]

@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { postPayrollRunJournal, seedChartOfAccounts } from "./gl";
+import { LEDGER_VERSION, postOpeningBankBalance, syncCompanyLedger } from "./ledger/posting";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -551,6 +552,17 @@ async function createSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS rti_submissions_company_idx ON rti_submissions (company_id, created_at DESC);
+
+    -- Full ledger: journals can be reversed (never deleted), so "one journal per source"
+    -- only applies to journals that are still in force.
+    ALTER TABLE gl_journals ADD COLUMN IF NOT EXISTS content_hash TEXT;
+    ALTER TABLE gl_journals ADD COLUMN IF NOT EXISTS reversed_by TEXT;
+    ALTER TABLE gl_journals ADD COLUMN IF NOT EXISTS reverses TEXT;
+    ALTER TABLE gl_journals DROP CONSTRAINT IF EXISTS gl_journals_company_id_source_type_source_id_key;
+    CREATE UNIQUE INDEX IF NOT EXISTS gl_journals_active_source ON gl_journals (company_id, source_type, source_id)
+      WHERE reversed_by IS NULL AND reverses IS NULL;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS ledger_version INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS wages_paid_at DATE;
   `);
 }
 
@@ -571,6 +583,7 @@ async function seed(): Promise<void> {
     await seedFinanceExtras(companyId);
     await seedGeneralLedger(companyId);
     await pool.query("UPDATE companies SET is_demo = true WHERE id = $1 AND NOT is_demo", [companyId]);
+    await backfillLedgers();
     return;
   }
 
@@ -579,6 +592,7 @@ async function seed(): Promise<void> {
     [companyId, "Harrow & Vale Property Group", 15, "Weekly + monthly"]
   );
   await seedSampleData(companyId);
+  await backfillLedgers();
 }
 
 /**
@@ -745,9 +759,26 @@ export async function seedSampleData(companyId: string): Promise<void> {
   await seedGeneralLedger(companyId);
 }
 
+/**
+ * Brings every business's books up to the current posting rules (new accounts, and journals for
+ * invoices, bills, claims and assets that existed before the full ledger). Runs once per version.
+ */
+export async function backfillLedgers(): Promise<void> {
+  const pool = getPool();
+  const { rows } = await pool.query("SELECT id, is_demo FROM companies WHERE ledger_version < $1", [LEDGER_VERSION]);
+  for (const c of rows) {
+    await seedChartOfAccounts(pool, c.id);
+    // The demo company gets a starting bank balance so its balance sheet reads sensibly.
+    if (c.is_demo) await postOpeningBankBalance(pool, c.id, "2022-01-01", 120_000);
+    await syncCompanyLedger(pool, c.id);
+    await pool.query("UPDATE companies SET ledger_version = $2 WHERE id = $1", [c.id, LEDGER_VERSION]);
+  }
+}
+
 /** A brand-new business with no sample data still needs its chart of accounts. */
 export async function seedBlankCompany(companyId: string): Promise<void> {
   await seedChartOfAccounts(getPool(), companyId);
+  await getPool().query("UPDATE companies SET ledger_version = $2 WHERE id = $1", [companyId, LEDGER_VERSION]);
 }
 
 /** Chart of accounts, plus a ledger journal for any payroll run approved before the ledger existed. */
