@@ -42,9 +42,12 @@ export function ReviewPanel({
   initialLines,
   totalEmployees,
   engineRunId,
+  calculated = false,
 }: {
   initialLines: PayrollLine[];
   totalEmployees: number;
+  /** A real run calculated by the payroll engine (not the illustrative sample data). */
+  calculated?: boolean;
   /** Set for runs calculated by the payroll engine: blockers must be fixed and recalculated, not signed off. */
   engineRunId?: string;
 }) {
@@ -131,7 +134,11 @@ export function ReviewPanel({
           `${data.includedCount} payments approved and queued. ${(data.excludedNames ?? []).join(", ")} will join the next run once the blocking issue is resolved.${ledgerNote}`
         );
       } else {
-        showToast(`Payroll approved — BACS submission and HMRC RTI filing triggered automatically.${ledgerNote}`);
+        showToast(
+          calculated
+            ? `Payroll approved and locked.${ledgerNote} Next: file the FPS with HMRC and pay your team from the pay run page.`
+            : `Payroll approved — BACS submission and HMRC RTI filing triggered automatically.${ledgerNote}`
+        );
       }
       router.refresh();
     } finally {
@@ -318,7 +325,9 @@ export function ReviewPanel({
               {engineRunId ? ", then recalculate." : `, or approve the other ${approvable} now.`}
             </>
           ) : (
-            "Every item has been reviewed. Approving will submit the BACS file and file RTI with HMRC on payday."
+            calculated
+              ? "Every item has been reviewed. Approving locks the payslips and posts the journal — then file the FPS with HMRC and download the payment file."
+              : "Every item has been reviewed. Approving will submit the BACS file and file RTI with HMRC on payday."
           )}
         </div>
         <button

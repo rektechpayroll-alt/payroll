@@ -38,8 +38,10 @@ export default async function DashboardPage() {
 
   const calculated = run.source === "engine";
   const headroom = run.connected_balance - run.net_pay;
-  const lastMonthCost = trend[trend.length - 2]?.cost_to_company ?? run.gross_pay;
-  const pctChange = (((run.gross_pay + run.employer_ni + run.employer_pension - lastMonthCost) / lastMonthCost) * 100).toFixed(1);
+  const lastMonthCost = trend[trend.length - 2]?.cost_to_company ?? null;
+  const pctChange = lastMonthCost
+    ? (((run.gross_pay + run.employer_ni + run.employer_pension - lastMonthCost) / lastMonthCost) * 100).toFixed(1)
+    : null;
 
   return (
     <div>
@@ -139,6 +141,7 @@ export default async function DashboardPage() {
           initialLines={lines}
           totalEmployees={calculated ? lines.length : company.employee_count}
           engineRunId={calculated && run.status === "open" ? run.id : undefined}
+          calculated={calculated}
         />
 
         <aside className="flex flex-col gap-3.5">
@@ -151,7 +154,9 @@ export default async function DashboardPage() {
                 <span className="font-display text-[19px] font-semibold font-num">
                   {gbpCompact(run.gross_pay + run.employer_ni + run.employer_pension)}
                 </span>
-                <span className="text-xs text-[var(--ink-muted)]">this run, {Number(pctChange) >= 0 ? "+" : ""}{pctChange}% vs last month</span>
+                <span className="text-xs text-[var(--ink-muted)]">
+                  {pctChange === null ? "this run · history builds up as you run payroll" : `this run, ${Number(pctChange) >= 0 ? "+" : ""}${pctChange}% vs last month`}
+                </span>
               </div>
               <Sparkline labels={trend.map((t) => t.month_label)} series={[{ values: trend.map((t) => t.cost_to_company), colorVar: "--series-1" }]} />
             </div>

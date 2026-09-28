@@ -68,6 +68,8 @@ suite("statutory pay, reliefs, directors and payments", () => {
     expect(sam.absence_deduction).toBe(692.31);
     expect(sam.gross_pay).toBeCloseTo(3000 - 692.31 + 123.25, 2);
     expect(sam.statutory_breakdown).toEqual([{ type: "sickness", payment: "SSP", days: 5, amount: 123.25 }]);
+    // Started 1 April but first paid in Verity in October with no P45 figures → flagged
+    expect(sam.flags!.map((f) => f.tag)).toContain("No earlier pay this tax year");
   });
 
   it("pays SMP for the whole of October, stops salary, and counts recovery at 92%", async () => {

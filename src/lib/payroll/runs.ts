@@ -33,6 +33,14 @@ function dateLabel(iso: string, opts: Intl.DateTimeFormatOptions) {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { ...opts, timeZone: "UTC" });
 }
 
+/** Start dates are free text on older records ("1 Apr 2026"); returns YYYY-MM-DD or null. */
+function isoDate(s: string | null): string | null {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(`${s} 12:00 UTC`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -202,6 +210,7 @@ async function calculateLine(client: PoolClient, run: RunRow, employee: Employee
     flags.push({ severity: "critical", source: "Bank & Payments", tag: "No hourly rate set", reason: "Add this employee's hourly rate in their pay details before paying them." });
   }
 
+  const ytd = await ytdFor(client, employee, run);
   const slip = calculatePayslip({
     params,
     frequency: run.frequency,
@@ -228,10 +237,21 @@ async function calculateLine(client: PoolClient, run: RunRow, employee: Employee
     statutoryPay: absence.statutory,
     absenceDeduction: absence.deduction,
     payrolledBenefits: Math.round(((employee.payrolled_benefits_annual ?? 0) * 100) / PERIODS[run.frequency]),
-    ytd: await ytdFor(client, employee, run),
+    ytd,
     previousNetPay: await previousNet(client, employee.id, run),
   });
   flags.push(...slip.flags);
+  // A mid-year first payment with nothing recorded before it gets every earlier period's
+  // allowance at once — right for a genuine new starter, wrong if earlier pay went unrecorded.
+  const startDate = isoDate(employee.start_date);
+  if (slip.period.number > 1 && ytd.taxablePay === 0 && slip.cumulative && startDate && startDate < run.period_start) {
+    flags.push({
+      severity: "serious",
+      source: "Tax & Statutory",
+      tag: "No earlier pay this tax year",
+      reason: `This is their first pay in Verity this tax year, but they started before this pay period, so their tax code gives ${slip.period.number} periods' allowance at once. If they were paid earlier this tax year — by you or a previous employer — enter those figures as previous pay (P45) in their pay details.`,
+    });
+  }
   flags.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
   const top = flags[0] ?? null;
 
