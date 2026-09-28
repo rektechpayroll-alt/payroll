@@ -1,5 +1,7 @@
 "use client";
 
+import { CURRENCIES } from "@/lib/fx/currencies";
+import { FxHint } from "@/components/FxTools";
 import { postOrReport } from "@/lib/client-actions";
 
 import { useState } from "react";
@@ -247,7 +249,6 @@ export function PurchasingHub({
   );
 }
 
-const CURRENCIES = ["GBP", "USD", "EUR", "AED"] as const;
 
 function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void; onCancel: () => void }) {
   const [supplierName, setSupplierName] = useState("");
@@ -293,9 +294,14 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
         </select>
         <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]">
           {CURRENCIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
           ))}
         </select>
+        {currency !== "GBP" && Number(total) > 0 && (
+          <div className="sm:col-span-full">
+            <FxHint currency={currency} amount={Number(total)} />
+          </div>
+        )}
       </div>
       <div className="mt-3.5 flex items-center justify-end gap-2">
         {error && <span className="mr-auto text-[12px] font-semibold text-[var(--critical-ink)]">{error}</span>}

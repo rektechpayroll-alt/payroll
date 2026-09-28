@@ -4,7 +4,7 @@ import { postJournal, reverseJournal } from "@/lib/gl";
 import { ledgerDate, syncDocument } from "@/lib/ledger/posting";
 import { currentCompanyId, getSession } from "@/lib/tenant";
 import { assertVatPeriodOpen } from "@/lib/vat/returns";
-import { autoMatch, suggestionsFor, type Candidates, type Suggestion } from "./match";
+import { amountFits, autoMatch, suggestionsFor, type Candidates, type Suggestion } from "./match";
 import { parseStatement, type ColumnMapping } from "./parse";
 
 /** Bank statements: import, reconcile against Verity's records, and compare with the books. */
@@ -79,16 +79,20 @@ export type StatementLineView = {
 async function candidates(companyId: string): Promise<Candidates> {
   const pool = getPool();
   const [inv, bills, runs, recorded, rules] = await Promise.all([
-    pool.query("SELECT id, invoice_number, customer_name, total FROM invoices WHERE company_id = $1 AND status = 'sent'", [companyId]),
-    pool.query("SELECT id, bill_reference, supplier_name, total FROM bills WHERE company_id = $1 AND status = 'unpaid'", [companyId]),
+    pool.query("SELECT id, invoice_number, customer_name, total, currency FROM invoices WHERE company_id = $1 AND status = 'sent'", [companyId]),
+    pool.query("SELECT id, bill_reference, supplier_name, total, currency FROM bills WHERE company_id = $1 AND status = 'unpaid'", [companyId]),
     pool.query(
       `SELECT id, period_label, net_pay, to_char(pay_date, 'YYYY-MM-DD') AS pay_date FROM payroll_runs
        WHERE company_id = $1 AND source = 'engine' AND status LIKE 'approved%' AND wages_paid_at IS NULL`,
       [companyId]
     ),
     pool.query(
-      `SELECT id, txn_date, description, amount, direction FROM bank_transactions
-       WHERE company_id = $1 AND source = 'app' AND matched_txn_id IS NULL`,
+      `SELECT t.id, t.txn_date, t.description, t.amount, t.direction,
+              COALESCE(i.currency, b.currency, 'GBP') <> 'GBP' AS is_foreign
+       FROM bank_transactions t
+       LEFT JOIN invoices i ON i.id = t.matched_invoice_id AND i.company_id = t.company_id
+       LEFT JOIN bills b ON b.id = t.matched_bill_id AND b.company_id = t.company_id
+       WHERE t.company_id = $1 AND t.source = 'app' AND t.matched_txn_id IS NULL`,
       [companyId]
     ),
     pool.query(
@@ -97,10 +101,10 @@ async function candidates(companyId: string): Promise<Candidates> {
     ),
   ]);
   return {
-    invoices: inv.rows.map((r) => ({ id: r.id, number: r.invoice_number, customer: r.customer_name, total: toPence(r.total) })),
-    bills: bills.rows.map((r) => ({ id: r.id, reference: r.bill_reference, supplier: r.supplier_name, total: toPence(r.total) })),
+    invoices: inv.rows.map((r) => ({ id: r.id, number: r.invoice_number, customer: r.customer_name, total: toPence(r.total), currency: r.currency })),
+    bills: bills.rows.map((r) => ({ id: r.id, reference: r.bill_reference, supplier: r.supplier_name, total: toPence(r.total), currency: r.currency })),
     payRuns: runs.rows.map((r) => ({ id: r.id, label: r.period_label, netPay: toPence(r.net_pay), payDate: r.pay_date })),
-    recorded: recorded.rows.map((r) => ({ id: r.id, date: ledgerDate(r.txn_date), description: r.description, amount: (r.direction === "credit" ? 1 : -1) * toPence(r.amount) })),
+    recorded: recorded.rows.map((r) => ({ id: r.id, date: ledgerDate(r.txn_date), description: r.description, amount: (r.direction === "credit" ? 1 : -1) * toPence(r.amount), foreign: r.is_foreign })),
     rules: rules.rows.map((r) => ({ id: r.id, contains: r.contains, direction: r.direction, accountCode: r.account_code, accountName: r.name ?? "" })),
   };
 }
@@ -174,16 +178,16 @@ export async function reconcileLine(lineId: string, target: ReconcileTarget): Pr
   const amount = toPence(line.amount);
 
   if (target.kind === "invoice") {
-    const { rows } = await pool.query("SELECT total, status FROM invoices WHERE id = $1 AND company_id = $2", [target.id, companyId]);
+    const { rows } = await pool.query("SELECT total, status, currency FROM invoices WHERE id = $1 AND company_id = $2", [target.id, companyId]);
     if (!rows[0] || rows[0].status !== "sent") throw new BankError("That invoice isn't open.");
-    if (!credit || toPence(rows[0].total) !== amount) throw new BankError("The amount doesn't match the invoice.");
+    if (!credit || !amountFits(amount, toPence(rows[0].total), rows[0].currency !== "GBP")) throw new BankError("The amount doesn't match the invoice.");
     await pool.query("UPDATE bank_transactions SET status = 'matched', matched_invoice_id = $1, reconciled_at = now() WHERE id = $2", [target.id, lineId]);
     await pool.query("UPDATE invoices SET status = 'paid' WHERE id = $1 AND company_id = $2", [target.id, companyId]);
     await syncDocument(pool, companyId, "invoice", target.id);
   } else if (target.kind === "bill") {
-    const { rows } = await pool.query("SELECT total, status FROM bills WHERE id = $1 AND company_id = $2", [target.id, companyId]);
+    const { rows } = await pool.query("SELECT total, status, currency FROM bills WHERE id = $1 AND company_id = $2", [target.id, companyId]);
     if (!rows[0] || rows[0].status !== "unpaid") throw new BankError("That bill isn't unpaid.");
-    if (credit || toPence(rows[0].total) !== amount) throw new BankError("The amount doesn't match the bill.");
+    if (credit || !amountFits(amount, toPence(rows[0].total), rows[0].currency !== "GBP")) throw new BankError("The amount doesn't match the bill.");
     await pool.query("UPDATE bank_transactions SET status = 'matched', matched_bill_id = $1, reconciled_at = now() WHERE id = $2", [target.id, lineId]);
     await pool.query("UPDATE bills SET status = 'paid' WHERE id = $1 AND company_id = $2", [target.id, companyId]);
     await syncDocument(pool, companyId, "bill", target.id);
@@ -211,13 +215,24 @@ export async function reconcileLine(lineId: string, target: ReconcileTarget): Pr
     await pool.query("UPDATE payroll_runs SET wages_paid_at = $2 WHERE id = $1", [run.id, date]);
   } else if (target.kind === "recorded") {
     const { rows } = await pool.query(
-      "SELECT amount, direction FROM bank_transactions WHERE id = $1 AND company_id = $2 AND source = 'app' AND matched_txn_id IS NULL",
+      `SELECT t.amount, t.direction, t.matched_invoice_id, t.matched_bill_id, COALESCE(i.currency, b.currency, 'GBP') <> 'GBP' AS is_foreign
+       FROM bank_transactions t
+       LEFT JOIN invoices i ON i.id = t.matched_invoice_id AND i.company_id = t.company_id
+       LEFT JOIN bills b ON b.id = t.matched_bill_id AND b.company_id = t.company_id
+       WHERE t.id = $1 AND t.company_id = $2 AND t.source = 'app' AND t.matched_txn_id IS NULL`,
       [target.id, companyId]
     );
-    if (!rows[0] || rows[0].direction !== line.direction || toPence(rows[0].amount) !== amount) throw new BankError("That recorded payment doesn't match this line.");
+    const rec = rows[0];
+    if (!rec || rec.direction !== line.direction || !amountFits(amount, toPence(rec.amount), rec.is_foreign)) throw new BankError("That recorded payment doesn't match this line.");
     // The payment is already in the books; the statement line just confirms it.
     await pool.query("UPDATE bank_transactions SET status = 'matched', matched_txn_id = $1, reconciled_at = now() WHERE id = $2", [target.id, lineId]);
     await pool.query("UPDATE bank_transactions SET matched_txn_id = $1 WHERE id = $2", [lineId, target.id]);
+    if (rec.is_foreign && toPence(rec.amount) !== amount) {
+      // The bank's own conversion is the real cost — correct the payment and its exchange difference.
+      await pool.query("UPDATE bank_transactions SET amount = $1 WHERE id = $2", [line.amount, target.id]);
+      if (rec.matched_invoice_id) await syncDocument(pool, companyId, "invoice", rec.matched_invoice_id);
+      if (rec.matched_bill_id) await syncDocument(pool, companyId, "bill", rec.matched_bill_id);
+    }
   } else {
     const { rows } = await pool.query("SELECT type FROM gl_accounts WHERE company_id = $1 AND code = $2", [companyId, target.accountCode]);
     if (!rows[0]) throw new BankError("Choose an account from your chart of accounts.");

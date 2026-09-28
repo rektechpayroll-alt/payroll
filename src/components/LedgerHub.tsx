@@ -1,5 +1,7 @@
 "use client";
 
+import { CURRENCIES } from "@/lib/fx/currencies";
+import { FxHint } from "@/components/FxTools";
 import { postOrReport } from "@/lib/client-actions";
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
@@ -533,7 +535,6 @@ export function LedgerHub({
   );
 }
 
-const CURRENCIES = ["GBP", "USD", "EUR", "AED"] as const;
 
 function NewInvoiceForm({ onCreated, onCancel }: { onCreated: (invoice: Invoice) => void; onCancel: () => void }) {
   const [customerName, setCustomerName] = useState("");
@@ -756,7 +757,7 @@ function LineItemForm({
               className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] font-normal text-[var(--ink)]"
             >
               {CURRENCIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
               ))}
             </select>
           </label>
@@ -814,7 +815,9 @@ function LineItemForm({
               Subtotal <span className="font-num font-semibold">{currency} {(subtotal).toFixed(2)}</span> &middot; VAT (20%){" "}
               <span className="font-num font-semibold">{currency} {vat.toFixed(2)}</span> &middot; Total{" "}
               <span className="font-num font-semibold text-[var(--ink)]">{currency} {(subtotal + vat).toFixed(2)}</span>
-              <span className="ml-1 text-[var(--ink-muted)]">(converted to GBP at an illustrative rate on save)</span>
+              <span className="mt-0.5 block">
+                <FxHint currency={currency} amount={subtotal + vat} />
+              </span>
             </>
           ) : (
             <>

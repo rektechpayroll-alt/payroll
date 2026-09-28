@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
 import { postPayrollRunJournal, type AccountType } from "./gl";
-import { syncDepreciation, syncDocument } from "./ledger/posting";
+import { ledgerDate, syncDepreciation, syncDocument } from "./ledger/posting";
+import { gbpRate } from "./fx/rates";
 import { vatFromGross } from "./vat/calc";
 import { assertVatPeriodOpen } from "./vat/returns";
 import { currentCompanyId, getSession } from "./tenant";
@@ -673,7 +674,6 @@ export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]>
 }
 
 /** Illustrative FX rates to GBP — real, stored, computed conversion math without a live rates API. Same table lib/db.ts's seed uses. */
-export const FX_RATES_TO_GBP: Record<string, number> = { GBP: 1, USD: 0.79, EUR: 0.855, AED: 0.215 };
 
 export type CreateInvoiceInput = {
   customerName: string;
@@ -693,13 +693,15 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
   const pool = getPool();
 
   const currency = input.currency ?? "GBP";
-  const fxRate = FX_RATES_TO_GBP[currency] ?? 1;
+  // Converted at the ECB rate on the invoice date — the rate HMRC accepts for VAT on the supply.
+  const fxRate = (await gbpRate(currency, ledgerDate(input.issueDate))).rate;
   const originalSubtotal = input.items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
   const originalVat = Math.round(originalSubtotal * (input.vatRate / 100) * 100) / 100;
   const originalTotal = Math.round((originalSubtotal + originalVat) * 100) / 100;
   const subtotal = Math.round(originalSubtotal * fxRate * 100) / 100;
   const vatAmount = Math.round(originalVat * fxRate * 100) / 100;
-  const total = Math.round(originalTotal * fxRate * 100) / 100;
+  // The sum of the converted parts, so the invoice's journal always balances to the penny.
+  const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
   const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM invoices WHERE company_id = $1", [companyId]);
   const nextNumber = 1041 + Number(countRows[0]?.n ?? 0);
@@ -1017,7 +1019,7 @@ export async function createBill(input: {
   const companyId = await currentCompanyId();
   const pool = getPool();
   const currency = input.currency ?? "GBP";
-  const fxRate = FX_RATES_TO_GBP[currency] ?? 1;
+  const fxRate = (await gbpRate(currency, ledgerDate(input.billDate))).rate;
   const gbpTotal = Math.round(input.total * fxRate * 100) / 100;
   const vatRate = [20, 5, 0].includes(input.vatRate ?? 0) ? input.vatRate ?? 0 : 0;
   const vatAmount = vatFromGross(Math.round(gbpTotal * 100), vatRate) / 100;
@@ -1043,6 +1045,8 @@ export async function payBill(id: string): Promise<Bill> {
   const { rows: billRows } = await pool.query("SELECT * FROM bills WHERE id = $1 AND company_id = $2", [id, companyId]);
   const bill = billRows[0] as Bill | undefined;
   if (!bill) throw new Error("Bill not found");
+  // A foreign bill costs whatever the pounds are worth today; the difference is an exchange gain or loss.
+  const paid = bill.currency !== "GBP" && bill.original_total != null ? Math.round(bill.original_total * (await gbpRate(bill.currency, new Date().toISOString().slice(0, 10))).rate * 100) / 100 : bill.total;
 
   await pool.query(
     `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_bill_id, source, sort_order)
@@ -1052,7 +1056,7 @@ export async function payBill(id: string): Promise<Bill> {
       companyId,
       new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
       `${bill.supplier_name.toUpperCase()} — ${bill.bill_reference}`,
-      bill.total,
+      paid,
       bill.category,
       id,
     ]

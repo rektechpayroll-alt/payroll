@@ -14,10 +14,11 @@
 export type LineForMatching = { id: string; date: string; description: string; amount: number };
 
 export type Candidates = {
-  invoices: Array<{ id: string; number: string; customer: string; total: number }>;
-  bills: Array<{ id: string; reference: string; supplier: string; total: number }>;
+  /** `currency` other than GBP means the pounds received can differ from the booked total. */
+  invoices: Array<{ id: string; number: string; customer: string; total: number; currency?: string }>;
+  bills: Array<{ id: string; reference: string; supplier: string; total: number; currency?: string }>;
   payRuns: Array<{ id: string; label: string; netPay: number; payDate: string | null }>;
-  recorded: Array<{ id: string; date: string; description: string; amount: number }>;
+  recorded: Array<{ id: string; date: string; description: string; amount: number; foreign?: boolean }>;
   rules: Array<{ id: string; contains: string; direction: "any" | "credit" | "debit"; accountCode: string; accountName: string }>;
 };
 
@@ -49,6 +50,15 @@ function mentions(description: string, ...needles: string[]): boolean {
   });
 }
 
+/**
+ * Whether a bank amount pays a document. Sterling must match to the penny; a foreign-currency
+ * document is converted by the bank at the day's rate, so anything within 10% counts.
+ */
+export function amountFits(bankPence: number, bookedPence: number, foreign: boolean): boolean {
+  if (!foreign) return bankPence === bookedPence;
+  return Math.abs(bankPence - bookedPence) <= Math.round(bookedPence * 0.1);
+}
+
 const daysApart = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 const rank = (c: Confidence) => (c === "high" ? 0 : 1);
 
@@ -58,14 +68,14 @@ export function suggestionsFor(line: LineForMatching, c: Candidates): Suggestion
   const size = Math.abs(line.amount);
 
   for (const r of c.recorded) {
-    if (r.amount !== line.amount) continue;
+    if (Math.sign(r.amount) !== Math.sign(line.amount) || !amountFits(Math.abs(line.amount), Math.abs(r.amount), !!r.foreign)) continue;
     const gap = daysApart(r.date, line.date);
     if (gap > 7) continue;
     out.push({ kind: "recorded", id: r.id, label: `Already recorded: ${r.description} (${r.date})`, confidence: gap <= 3 ? "high" : "medium" });
   }
   if (credit) {
     for (const inv of c.invoices) {
-      if (inv.total !== size) continue;
+      if (!amountFits(size, inv.total, !!inv.currency && inv.currency !== "GBP")) continue;
       out.push({
         kind: "invoice",
         id: inv.id,
@@ -75,7 +85,7 @@ export function suggestionsFor(line: LineForMatching, c: Candidates): Suggestion
     }
   } else {
     for (const b of c.bills) {
-      if (b.total !== size) continue;
+      if (!amountFits(size, b.total, !!b.currency && b.currency !== "GBP")) continue;
       out.push({ kind: "bill", id: b.id, label: `Bill ${b.reference} — ${b.supplier}`, confidence: mentions(line.description, b.reference, b.supplier) ? "high" : "medium" });
     }
     for (const run of c.payRuns) {

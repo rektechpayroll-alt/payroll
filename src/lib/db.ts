@@ -707,6 +707,14 @@ async function createSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    -- ECB reference rates (public data, shared by every business), units of currency per euro.
+    CREATE TABLE IF NOT EXISTS fx_rates (
+      rate_date DATE NOT NULL,
+      currency TEXT NOT NULL,
+      per_eur DOUBLE PRECISION NOT NULL,
+      PRIMARY KEY (rate_date, currency)
+    );
+
     -- Each person's own choice and order of dashboard widgets, per business.
     CREATE TABLE IF NOT EXISTS dashboard_layouts (
       company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

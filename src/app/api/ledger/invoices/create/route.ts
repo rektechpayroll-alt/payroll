@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@/lib/http";
 import { createInvoice } from "@/lib/queries";
 
 export async function POST(req: NextRequest) {
@@ -14,6 +15,7 @@ export async function POST(req: NextRequest) {
   }
 
   const invoice = await createInvoice({
+    currency: typeof body?.currency === "string" ? body.currency : "GBP",
     customerName: customerName.trim(),
     customerEmail: (body?.customerEmail as string | undefined)?.trim() || null,
     issueDate: (body?.issueDate as string | undefined)?.trim() || new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
@@ -21,7 +23,8 @@ export async function POST(req: NextRequest) {
     vatRate: typeof body?.vatRate === "number" ? body.vatRate : 20,
     notes: (body?.notes as string | undefined)?.trim() || null,
     items,
-  });
+  }).catch((e: unknown) => e as Error);
+  if (invoice instanceof Error) return errorResponse(invoice);
 
   return NextResponse.json({ invoice });
 }

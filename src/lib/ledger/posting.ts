@@ -26,6 +26,7 @@ const A = {
   sales: "4000",
   depreciation: "8000",
   travel: "7400",
+  fxGains: "7950",
 } as const;
 
 /** Source types each document family owns — anything in force for the document outside `desired` gets reversed. */
@@ -71,17 +72,21 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
     }
     if (inv.status === "paid") {
       const { rows: txn } = await pool.query(
-        "SELECT txn_date FROM bank_transactions WHERE matched_invoice_id = $1 AND company_id = $2 ORDER BY sort_order DESC LIMIT 1",
+        "SELECT txn_date, amount FROM bank_transactions WHERE matched_invoice_id = $1 AND company_id = $2 ORDER BY sort_order DESC LIMIT 1",
         [id, companyId]
       );
+      // A foreign-currency invoice brings in whatever the pounds are worth on the day it's paid.
+      const received = inv.currency !== "GBP" && txn[0] ? round2(txn[0].amount) : inv.total;
+      const fx = round2(received - inv.total);
       out.push({
         sourceType: "invoice_payment",
         sourceId: id,
         date: ledgerDate(txn[0]?.txn_date, ledgerDate(inv.due_date)),
         narration: `Payment received — ${inv.invoice_number}`,
         lines: [
-          { accountCode: A.bank, description: inv.customer_name, debit: inv.total },
+          { accountCode: A.bank, description: inv.customer_name, debit: received },
           { accountCode: A.debtors, description: inv.invoice_number, credit: inv.total },
+          ...(fx ? [{ accountCode: A.fxGains, description: `Exchange ${fx > 0 ? "gain" : "loss"} on ${inv.currency}`, ...(fx > 0 ? { credit: fx } : { debit: -fx }) }] : []),
         ],
       });
     }
@@ -104,9 +109,11 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
     });
     if (bill.status === "paid") {
       const { rows: txn } = await pool.query(
-        "SELECT txn_date FROM bank_transactions WHERE matched_bill_id = $1 AND company_id = $2 ORDER BY sort_order DESC LIMIT 1",
+        "SELECT txn_date, amount FROM bank_transactions WHERE matched_bill_id = $1 AND company_id = $2 ORDER BY sort_order DESC LIMIT 1",
         [id, companyId]
       );
+      const paid = bill.currency !== "GBP" && txn[0] ? round2(txn[0].amount) : bill.total;
+      const fx = round2(bill.total - paid);
       out.push({
         sourceType: "bill_payment",
         sourceId: id,
@@ -114,7 +121,8 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
         narration: `Paid ${bill.supplier_name} — ${bill.bill_reference}`,
         lines: [
           { accountCode: A.creditors, description: bill.bill_reference, debit: bill.total },
-          { accountCode: A.bank, description: bill.supplier_name, credit: bill.total },
+          { accountCode: A.bank, description: bill.supplier_name, credit: paid },
+          ...(fx ? [{ accountCode: A.fxGains, description: `Exchange ${fx > 0 ? "gain" : "loss"} on ${bill.currency}`, ...(fx > 0 ? { credit: fx } : { debit: -fx }) }] : []),
         ],
       });
     }
@@ -270,7 +278,7 @@ export async function syncDepreciation(pool: Pool, companyId: string, asAt = tod
 }
 
 /** Current ledger posting rules version — bump to re-run the backfill for every business. */
-export const LEDGER_VERSION = 2;
+export const LEDGER_VERSION = 3;
 
 /** Posts everything a business's documents imply. Idempotent. */
 export async function syncCompanyLedger(pool: Pool, companyId: string): Promise<void> {

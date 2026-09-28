@@ -40,6 +40,7 @@ export const CHART_OF_ACCOUNTS: Array<{ code: string; name: string; type: Accoun
   { code: "7700", name: "Repairs and maintenance", type: "expense" },
   { code: "7800", name: "Printing, postage and stationery", type: "expense" },
   { code: "7900", name: "General expenses", type: "expense" },
+  { code: "7950", name: "Foreign exchange gains and losses", type: "expense" },
   { code: "8000", name: "Depreciation", type: "expense" },
 ];
 
