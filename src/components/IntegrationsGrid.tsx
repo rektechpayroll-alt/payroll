@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Integration } from "@/lib/queries";
@@ -15,11 +17,7 @@ export function IntegrationsGrid({ integrations }: { integrations: Integration[]
       prev.map((i) => (i.id === id ? { ...i, status: i.status === "connected" ? "not_connected" : "connected" } : i))
     );
     try {
-      await fetch("/api/integrations/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+      if (!(await postOrReport("/api/integrations/toggle", { id }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);

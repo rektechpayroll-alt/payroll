@@ -591,6 +591,46 @@ async function createSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    -- VAT (lib/vat). Amounts on bills/claims/bank lines are gross; the VAT part is stored alongside.
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_registered BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_number TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_scheme TEXT NOT NULL DEFAULT 'accrual';
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_stagger INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_locked_until DATE;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS vat_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS vat_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS vat_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS vat_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS vat_returns (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      period_start DATE NOT NULL,
+      period_end DATE NOT NULL,
+      period_key TEXT,
+      scheme TEXT NOT NULL,
+      box1 DOUBLE PRECISION NOT NULL, box2 DOUBLE PRECISION NOT NULL, box3 DOUBLE PRECISION NOT NULL,
+      box4 DOUBLE PRECISION NOT NULL, box5 DOUBLE PRECISION NOT NULL, box6 DOUBLE PRECISION NOT NULL,
+      box7 DOUBLE PRECISION NOT NULL, box8 DOUBLE PRECISION NOT NULL, box9 DOUBLE PRECISION NOT NULL,
+      status TEXT NOT NULL DEFAULT 'finalised',
+      hmrc_receipt TEXT,
+      hmrc_response JSONB,
+      finalised_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      submitted_at TIMESTAMPTZ,
+      UNIQUE (company_id, period_start, period_end)
+    );
+
+    -- HMRC Making Tax Digital connection per business (OAuth tokens, AES-GCM encrypted).
+    CREATE TABLE IF NOT EXISTS hmrc_connections (
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      service TEXT NOT NULL,
+      secret_enc TEXT NOT NULL,
+      connected_by TEXT,
+      connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (company_id, service)
+    );
+
     CREATE TABLE IF NOT EXISTS bank_rules (
       id TEXT PRIMARY KEY,
       company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

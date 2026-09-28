@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -48,11 +50,7 @@ export function AgentsHub({
   async function resolveLine(lineId: string) {
     setBusyId(lineId);
     try {
-      await fetch("/api/lines/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineId }),
-      });
+      if (!(await postOrReport("/api/lines/resolve", { lineId }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -62,11 +60,7 @@ export function AgentsHub({
   async function toggleTask(id: string) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));
     try {
-      await fetch("/api/close-tasks/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+      if (!(await postOrReport("/api/close-tasks/toggle", { id }))) return router.refresh();
       router.refresh();
     } catch {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));

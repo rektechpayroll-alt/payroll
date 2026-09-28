@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -87,11 +89,7 @@ export function ReviewPanel({
     setBusyId(line.id);
     setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, resolved: 1 } : l)));
     try {
-      await fetch("/api/lines/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineId: line.id }),
-      });
+      if (!(await postOrReport("/api/lines/resolve", { lineId: line.id }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);

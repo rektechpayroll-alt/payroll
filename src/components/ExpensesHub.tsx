@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
@@ -46,7 +48,7 @@ export function ExpensesHub({
     setBusyId(id);
     setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     try {
-      await fetch("/api/expenses/claims/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      if (!(await postOrReport("/api/expenses/claims/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -57,7 +59,7 @@ export function ExpensesHub({
     setBusyId(id);
     setMileage((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
     try {
-      await fetch("/api/expenses/mileage/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      if (!(await postOrReport("/api/expenses/mileage/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -200,6 +202,7 @@ function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
+  const [vatAmount, setVatAmount] = useState("");
   const [date, setDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -215,7 +218,7 @@ function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[
       const res = await fetch("/api/expenses/claims/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId, description, category, amount: Number(amount), expenseDate: date }),
+        body: JSON.stringify({ employeeId, description, category, amount: Number(amount), vatAmount: Number(vatAmount) || 0, expenseDate: date }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -236,6 +239,7 @@ function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[
         <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category, e.g. Travel" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-2" />
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount £" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
+        <input value={vatAmount} onChange={(e) => setVatAmount(e.target.value)} placeholder="VAT on receipt £ (optional)" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={date} onChange={(e) => setDate(e.target.value)} placeholder="Date, e.g. 20 Sep 2026" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
       </div>
       <div className="mt-3.5 flex items-center justify-end gap-2">

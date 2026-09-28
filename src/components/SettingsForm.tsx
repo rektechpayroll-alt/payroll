@@ -1,5 +1,7 @@
 "use client";
 
+import { reportError } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Company } from "@/lib/queries";
@@ -39,7 +41,7 @@ export function SettingsForm({ company }: { company: Company }) {
     setSaving(true);
     setSaved(false);
     try {
-      await fetch("/api/company/settings", {
+      const res = await fetch("/api/company/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -49,6 +51,11 @@ export function SettingsForm({ company }: { company: Company }) {
           approval_mode: approvalMode,
         }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        reportError(data.error ?? "Settings didn't save — please try again.");
+        return;
+      }
       setSaved(true);
       router.refresh();
       window.setTimeout(() => setSaved(false), 2500);

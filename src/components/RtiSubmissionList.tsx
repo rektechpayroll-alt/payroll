@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RtiSubmission } from "@/lib/rti/submissions";
@@ -18,7 +20,7 @@ export function RtiSubmissionList({ submissions }: { submissions: RtiSubmission[
   async function poll(id: string) {
     setBusy(id);
     try {
-      await fetch("/api/rti/poll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      await postOrReport("/api/rti/poll", { id });
       router.refresh();
     } finally {
       setBusy(null);

@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { expenseAccountFor, journalHash, postJournal, reverseJournal, type JournalLineInput } from "@/lib/gl";
+import { vatFromGross } from "@/lib/vat/calc";
 
 /**
  * Keeps the general ledger in step with every source document. For each document we work
@@ -38,6 +39,7 @@ const FAMILY: Record<DocType, string[]> = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Dates on older records are free text ("5 Sep 2026"); journals need YYYY-MM-DD. */
 export function ledgerDate(s: string | null | undefined, fallback = today()): string {
@@ -95,7 +97,8 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
       date: ledgerDate(bill.bill_date),
       narration: `Bill ${bill.bill_reference} — ${bill.supplier_name}`,
       lines: [
-        { accountCode: expenseAccountFor(bill.category), description: bill.category ?? bill.supplier_name, debit: bill.total },
+        { accountCode: expenseAccountFor(bill.category), description: bill.category ?? bill.supplier_name, debit: round2(bill.total - (bill.vat_amount ?? 0)) },
+        ...(bill.vat_amount ? [{ accountCode: A.vat, description: `Input VAT at ${bill.vat_rate}%`, debit: bill.vat_amount }] : []),
         { accountCode: A.creditors, description: bill.supplier_name, credit: bill.total },
       ],
     });
@@ -135,7 +138,8 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
         date,
         narration: `${type === "expense_claim" ? "Expense claim" : "Mileage claim"} — ${c.employee_name ?? "employee"}: ${what}`,
         lines: [
-          { accountCode: account, description: what, debit: c.amount },
+          { accountCode: account, description: what, debit: round2(c.amount - (c.vat_amount ?? 0)) },
+          ...(c.vat_amount ? [{ accountCode: A.vat, description: "Input VAT", debit: c.vat_amount }] : []),
           { accountCode: A.expensesPayable, description: c.employee_name ?? "Employee", credit: c.amount },
         ],
       });
@@ -159,10 +163,9 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
     const { rows } = await pool.query("SELECT * FROM bank_transactions WHERE id = $1 AND company_id = $2", [id, companyId]);
     const t = rows[0];
     if (!t || t.status !== "matched" || !t.account_code) return out;
-    const money = [
-      { accountCode: A.bank, description: t.description },
-      { accountCode: t.account_code, description: t.description },
-    ];
+    const vat = t.vat_rate ? vatFromGross(Math.round(t.amount * 100), t.vat_rate) / 100 : 0;
+    const net = round2(t.amount - vat);
+    const vatLine = vat ? [{ accountCode: A.vat, description: `VAT at ${t.vat_rate}%`, ...(t.direction === "credit" ? { credit: vat } : { debit: vat }) }] : [];
     out.push({
       sourceType: "bank_transaction",
       sourceId: id,
@@ -170,8 +173,8 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
       narration: `Bank: ${t.description}`,
       lines:
         t.direction === "credit"
-          ? [{ ...money[0], debit: t.amount }, { ...money[1], credit: t.amount }]
-          : [{ ...money[1], debit: t.amount }, { ...money[0], credit: t.amount }],
+          ? [{ accountCode: A.bank, description: t.description, debit: t.amount }, { accountCode: t.account_code, description: t.description, credit: net }, ...vatLine]
+          : [{ accountCode: t.account_code, description: t.description, debit: net }, ...vatLine, { accountCode: A.bank, description: t.description, credit: t.amount }],
     });
   }
 

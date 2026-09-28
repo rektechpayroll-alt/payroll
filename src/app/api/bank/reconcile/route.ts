@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   return bankAction(async () => {
     const t = b?.target;
     let target: ReconcileTarget;
-    if (t?.kind === "account") target = { kind: "account", accountCode: String(t.accountCode ?? ""), ruleId: typeof t.ruleId === "string" ? t.ruleId : undefined };
+    if (t?.kind === "account") target = { kind: "account", accountCode: String(t.accountCode ?? ""), ruleId: typeof t.ruleId === "string" ? t.ruleId : undefined, vatRate: Number(t.vatRate) || 0 };
     else if (["invoice", "bill", "payroll", "recorded"].includes(t?.kind)) target = { kind: t.kind, id: String(t.id ?? "") };
     else throw new BankError("Choose what this line is.");
     await reconcileLine(String(b?.lineId ?? ""), target);

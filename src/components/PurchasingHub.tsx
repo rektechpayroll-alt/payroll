@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
@@ -60,7 +62,7 @@ export function PurchasingHub({
     setBusyId(id);
     setBills((prev) => prev.map((b) => (b.id === id ? { ...b, status: "paid", isOverdue: false, daysOverdue: 0 } : b)));
     try {
-      await fetch("/api/purchasing/bills/pay", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!(await postOrReport("/api/purchasing/bills/pay", { id }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -71,7 +73,7 @@ export function PurchasingHub({
     setBusyId(id);
     setPos((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
     try {
-      await fetch("/api/purchasing/purchase-orders/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      if (!(await postOrReport("/api/purchasing/purchase-orders/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -253,6 +255,7 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
   const [dueDate, setDueDate] = useState("");
   const [total, setTotal] = useState("");
   const [currency, setCurrency] = useState<string>("GBP");
+  const [vatRate, setVatRate] = useState("20");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -266,7 +269,7 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
       const res = await fetch("/api/purchasing/bills/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total), currency }),
+        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total), currency, vatRate: Number(vatRate) }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -282,7 +285,12 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
         <input value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Supplier name" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-2" />
         <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category (optional)" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="Due date, e.g. 5 Oct 2026" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
-        <input value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Total" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-3" />
+        <input value={total} onChange={(e) => setTotal(e.target.value)} placeholder="Total including VAT" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-2" />
+        <select value={vatRate} onChange={(e) => setVatRate(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]">
+          <option value="20">VAT 20%</option>
+          <option value="5">VAT 5%</option>
+          <option value="0">No VAT</option>
+        </select>
         <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]">
           {CURRENCIES.map((c) => (
             <option key={c} value={c}>{c}</option>

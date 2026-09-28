@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ErrorToaster } from "@/components/ErrorToaster";
 import { Sidebar } from "@/components/Sidebar";
 import { getCompany, getCurrentRun, getLinesForRun } from "@/lib/queries";
 import { getSession } from "@/lib/tenant";
@@ -25,6 +26,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
         pendingCount={pendingCount}
       />
       <main className="px-8 pb-[60px] pt-[26px] max-[760px]:px-4">{children}</main>
+      <ErrorToaster />
     </div>
   );
 }

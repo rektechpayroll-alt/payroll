@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
 import { postPayrollRunJournal, type AccountType } from "./gl";
 import { syncDepreciation, syncDocument } from "./ledger/posting";
+import { vatFromGross } from "./vat/calc";
+import { assertVatPeriodOpen } from "./vat/returns";
 import { currentCompanyId, getSession } from "./tenant";
 import type { NiCategory, PayFrequency } from "./payroll/engine";
 
@@ -741,6 +743,10 @@ export async function updateInvoiceStatus(id: string, status: Invoice["status"])
   await ready();
   const companyId = await currentCompanyId();
   const pool = getPool();
+  if (status === "sent" || status === "void") {
+    const { rows: current } = await pool.query("SELECT issue_date, invoice_number FROM invoices WHERE id = $1 AND company_id = $2", [id, companyId]);
+    if (current[0]) await assertVatPeriodOpen(companyId, current[0].issue_date, `Invoice ${current[0].invoice_number}`);
+  }
   const { rows } = await pool.query(
     "UPDATE invoices SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *",
     [status, id, companyId]
@@ -1004,6 +1010,8 @@ export async function createBill(input: {
   dueDate: string;
   total: number;
   currency?: string;
+  /** VAT rate included in the total (20, 5 or 0). */
+  vatRate?: number;
 }): Promise<Bill> {
   await ready();
   const companyId = await currentCompanyId();
@@ -1011,13 +1019,16 @@ export async function createBill(input: {
   const currency = input.currency ?? "GBP";
   const fxRate = FX_RATES_TO_GBP[currency] ?? 1;
   const gbpTotal = Math.round(input.total * fxRate * 100) / 100;
+  const vatRate = [20, 5, 0].includes(input.vatRate ?? 0) ? input.vatRate ?? 0 : 0;
+  const vatAmount = vatFromGross(Math.round(gbpTotal * 100), vatRate) / 100;
+  await assertVatPeriodOpen(companyId, input.billDate, "This bill");
   const { rows: countRows } = await pool.query("SELECT COUNT(*) as n FROM bills WHERE company_id = $1", [companyId]);
   const nextNumber = 3001 + Number(countRows[0]?.n ?? 0);
   const billId = randomUUID();
   await pool.query(
-    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
-    [billId, companyId, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total]
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, vat_rate, vat_amount, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
+    [billId, companyId, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total, vatRate, vatAmount]
   );
   await syncDocument(pool, companyId, "bill", billId);
   const { rows } = await pool.query("SELECT * FROM bills WHERE id = $1", [billId]);
@@ -1223,16 +1234,16 @@ export async function getExpenseClaims(): Promise<ExpenseClaim[]> {
   return rows as ExpenseClaim[];
 }
 
-export async function createExpenseClaim(input: { employeeId: string; description: string; category: string; amount: number; expenseDate: string }): Promise<ExpenseClaim> {
+export async function createExpenseClaim(input: { employeeId: string; description: string; category: string; amount: number; expenseDate: string; vatAmount?: number }): Promise<ExpenseClaim> {
   await ready();
   const companyId = await currentCompanyId();
   const pool = getPool();
   await assertEmployeeInCompany(input.employeeId, companyId);
   const claimId = randomUUID();
   await pool.query(
-    `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM expense_claims WHERE company_id = $2))`,
-    [claimId, companyId, input.employeeId, input.description, input.category, input.amount, input.expenseDate]
+    `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, vat_amount, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM expense_claims WHERE company_id = $2))`,
+    [claimId, companyId, input.employeeId, input.description, input.category, input.amount, input.expenseDate, Math.min(Math.max(0, input.vatAmount ?? 0), input.amount)]
   );
   const { rows } = await pool.query("SELECT * FROM expense_claims WHERE id = $1", [claimId]);
   return rows[0] as ExpenseClaim;
@@ -1242,6 +1253,8 @@ export async function updateExpenseClaimStatus(id: string, status: ExpenseClaim[
   await ready();
   const companyId = await currentCompanyId();
   const pool = getPool();
+  const { rows: existing } = await pool.query("SELECT expense_date FROM expense_claims WHERE id = $1 AND company_id = $2", [id, companyId]);
+  if (existing[0]) await assertVatPeriodOpen(companyId, existing[0].expense_date, "This expense claim");
   if (status === "reimbursed") {
     const { rows: claimRows } = await pool.query("SELECT * FROM expense_claims WHERE id = $1 AND company_id = $2", [id, companyId]);
     const claim = claimRows[0] as ExpenseClaim | undefined;

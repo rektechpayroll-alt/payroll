@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OnboardingTask } from "@/lib/queries";
@@ -12,11 +14,7 @@ export function OnboardingChecklist({ initialTasks }: { initialTasks: Onboarding
   async function toggle(id: string) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));
     try {
-      await fetch("/api/onboarding-tasks/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+      if (!(await postOrReport("/api/onboarding-tasks/toggle", { id }))) return router.refresh();
       router.refresh();
     } catch {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));

@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
@@ -34,7 +36,7 @@ export function ProjectsHub({ employees, initialProjects }: { employees: Employe
     setBusyId(id);
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
     try {
-      await fetch("/api/projects/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      if (!(await postOrReport("/api/projects/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);

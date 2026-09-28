@@ -3,6 +3,7 @@ import { getPool, ready } from "@/lib/db";
 import { postJournal, reverseJournal } from "@/lib/gl";
 import { ledgerDate, syncDocument } from "@/lib/ledger/posting";
 import { currentCompanyId, getSession } from "@/lib/tenant";
+import { assertVatPeriodOpen } from "@/lib/vat/returns";
 import { autoMatch, suggestionsFor, type Candidates, type Suggestion } from "./match";
 import { parseStatement, type ColumnMapping } from "./parse";
 
@@ -155,7 +156,7 @@ export type ReconcileTarget =
   | { kind: "bill"; id: string }
   | { kind: "payroll"; id: string }
   | { kind: "recorded"; id: string }
-  | { kind: "account"; accountCode: string; ruleId?: string };
+  | { kind: "account"; accountCode: string; ruleId?: string; vatRate?: number };
 
 async function loadLine(companyId: string, lineId: string) {
   const { rows } = await getPool().query("SELECT * FROM bank_transactions WHERE id = $1 AND company_id = $2 AND source IN ('import', 'demo')", [lineId, companyId]);
@@ -221,9 +222,12 @@ export async function reconcileLine(lineId: string, target: ReconcileTarget): Pr
     const { rows } = await pool.query("SELECT type FROM gl_accounts WHERE company_id = $1 AND code = $2", [companyId, target.accountCode]);
     if (!rows[0]) throw new BankError("Choose an account from your chart of accounts.");
     if (target.accountCode === BANK_ACCOUNT) throw new BankError("A bank line can't be posted to the bank account itself.");
-    await pool.query("UPDATE bank_transactions SET status = 'matched', account_code = $1, rule_id = $2, reconciled_at = now() WHERE id = $3", [
+    const vatRate = [20, 5, 0].includes(target.vatRate ?? 0) ? target.vatRate ?? 0 : 0;
+    await assertVatPeriodOpen(companyId, line.txn_date, "This bank line");
+    await pool.query("UPDATE bank_transactions SET status = 'matched', account_code = $1, rule_id = $2, vat_rate = $3, reconciled_at = now() WHERE id = $4", [
       target.accountCode,
       target.ruleId ?? null,
+      vatRate,
       lineId,
     ]);
     await syncDocument(pool, companyId, "bank_transaction", lineId);
@@ -237,9 +241,10 @@ export async function unreconcileLine(lineId: string): Promise<void> {
   const pool = getPool();
   const line = await loadLine(companyId, lineId);
   if (line.status !== "matched") return;
+  if (line.account_code) await assertVatPeriodOpen(companyId, line.txn_date, "This bank line");
   await pool.query(
     `UPDATE bank_transactions SET status = 'unmatched', matched_invoice_id = NULL, matched_bill_id = NULL, matched_payroll_run_id = NULL,
-       matched_txn_id = NULL, account_code = NULL, rule_id = NULL, reconciled_at = NULL WHERE id = $1`,
+       matched_txn_id = NULL, account_code = NULL, rule_id = NULL, vat_rate = 0, reconciled_at = NULL WHERE id = $1`,
     [lineId]
   );
   if (line.matched_invoice_id) {

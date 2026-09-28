@@ -126,6 +126,7 @@ export function StatementLineRow({ line, accounts }: { line: StatementLineView; 
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [account, setAccount] = useState("");
+  const [vatRate, setVatRate] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
   async function act(url: string, body: unknown) {
@@ -178,9 +179,20 @@ export function StatementLineRow({ line, accounts }: { line: StatementLineView; 
               ))}
             </select>
             {account && (
-              <button className={btn} disabled={busy} onClick={() => act("/api/bank/reconcile", { lineId: line.id, target: { kind: "account", accountCode: account } })}>
-                Post
-              </button>
+              <>
+                <select className={input} value={vatRate} onChange={(e) => setVatRate(e.target.value)} title="VAT included in this amount">
+                  <option value="0">No VAT</option>
+                  <option value="20">incl. VAT 20%</option>
+                  <option value="5">incl. VAT 5%</option>
+                </select>
+                <button
+                  className={btn}
+                  disabled={busy}
+                  onClick={() => act("/api/bank/reconcile", { lineId: line.id, target: { kind: "account", accountCode: account, vatRate: Number(vatRate) } })}
+                >
+                  Post
+                </button>
+              </>
             )}
           </div>
         )}

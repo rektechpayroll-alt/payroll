@@ -1,5 +1,7 @@
 "use client";
 
+import { postOrReport } from "@/lib/client-actions";
+
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
@@ -86,11 +88,7 @@ export function LedgerHub({
     setBusyId(id);
     setInvoices((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
     try {
-      await fetch("/api/ledger/invoices/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
+      if (!(await postOrReport("/api/ledger/invoices/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -118,11 +116,7 @@ export function LedgerHub({
     setBusyId(id);
     setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, status } : q)));
     try {
-      await fetch("/api/ledger/quotes/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
+      if (!(await postOrReport("/api/ledger/quotes/status", { id, status }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -152,11 +146,7 @@ export function LedgerHub({
   async function confirmMatch(transactionId: string, invoiceId: string) {
     setBusyId(transactionId);
     try {
-      await fetch("/api/ledger/transactions/match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionId, invoiceId }),
-      });
+      if (!(await postOrReport("/api/ledger/transactions/match", { transactionId, invoiceId }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
@@ -166,11 +156,7 @@ export function LedgerHub({
   async function undoMatch(transactionId: string) {
     setBusyId(transactionId);
     try {
-      await fetch("/api/ledger/transactions/unmatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionId }),
-      });
+      if (!(await postOrReport("/api/ledger/transactions/unmatch", { transactionId }))) return router.refresh();
       router.refresh();
     } finally {
       setBusyId(null);
