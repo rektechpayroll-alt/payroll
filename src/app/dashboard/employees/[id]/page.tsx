@@ -6,6 +6,10 @@ import { nmwCheck, statutoryEligibility } from "@/lib/compliance";
 import { PayslipExplainer } from "@/components/PayslipExplainer";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { EmployeeProfileCard } from "@/components/EmployeeProfileCard";
+import { PayDetailsCard } from "@/components/PayDetailsCard";
+import { EmployeeRecordCard } from "@/components/EmployeeRecordCard";
+import { AbsencesCard } from "@/components/AbsencesCard";
+import { getAbsences } from "@/lib/payroll/records";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +70,9 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
 
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-2">
         <EmployeeProfileCard initialEmployee={employee} line={line} />
+        <PayDetailsCard initialEmployee={employee} />
+        <EmployeeRecordCard initialEmployee={employee} />
+        <AbsencesCard employeeId={employee.id} absences={await getAbsences(employee.id)} />
 
         <section className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
           <div className="border-b border-[var(--border)] px-[18px] py-[15px] pb-[13px]">

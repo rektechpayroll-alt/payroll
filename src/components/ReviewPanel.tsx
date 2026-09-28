@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
 import type { PayrollLine } from "@/lib/queries";
@@ -40,9 +41,12 @@ function CheckIcon({ className }: { className?: string }) {
 export function ReviewPanel({
   initialLines,
   totalEmployees,
+  engineRunId,
 }: {
   initialLines: PayrollLine[];
   totalEmployees: number;
+  /** Set for runs calculated by the payroll engine: blockers must be fixed and recalculated, not signed off. */
+  engineRunId?: string;
 }) {
   const router = useRouter();
   const [lines, setLines] = useState(initialLines);
@@ -91,6 +95,23 @@ export function ReviewPanel({
     }
   }
 
+  async function recalculate() {
+    if (!engineRunId) return;
+    setApproving(true);
+    try {
+      const res = await fetch("/api/payroll/runs/recalculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: engineRunId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      showToast(res.ok ? "Recalculated with everyone's latest pay details." : data.error ?? "Couldn't recalculate.");
+      router.refresh();
+    } finally {
+      setApproving(false);
+    }
+  }
+
   function query(line: PayrollLine) {
     showToast(`Query sent to your payroll specialist about ${line.employee_name}.`);
   }
@@ -100,10 +121,14 @@ export function ReviewPanel({
     try {
       const res = await fetch("/api/runs/approve", { method: "POST" });
       const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error ?? "Couldn't approve this run.");
+        return;
+      }
       const ledgerNote = data.journalPosted ? " Journal posted to Verity Ledger." : "";
       if (data.blockingCount > 0) {
         showToast(
-          `${data.includedCount} payments approved and queued. Jack Whitmore will join the next run once his bank details are confirmed.${ledgerNote}`
+          `${data.includedCount} payments approved and queued. ${(data.excludedNames ?? []).join(", ")} will join the next run once the blocking issue is resolved.${ledgerNote}`
         );
       } else {
         showToast(`Payroll approved — BACS submission and HMRC RTI filing triggered automatically.${ledgerNote}`);
@@ -201,13 +226,33 @@ export function ReviewPanel({
                 </div>
               ) : (
                 <div className="flex items-start gap-2 px-4 py-[14px]">
-                  <button
-                    disabled={busyId === line.id}
-                    onClick={() => resolve(line)}
-                    className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] py-2 text-[12.5px] font-semibold hover:bg-[var(--surface-2)] disabled:opacity-50"
-                  >
-                    {line.severity === "critical" ? "I've updated their details" : "Approve"}
-                  </button>
+                  {engineRunId && line.severity === "critical" ? (
+                    <>
+                      {line.employee_id && (
+                        <Link
+                          href={`/dashboard/employees/${line.employee_id}`}
+                          className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] py-2 text-[12.5px] font-semibold hover:bg-[var(--surface-2)]"
+                        >
+                          Fix details
+                        </Link>
+                      )}
+                      <button
+                        disabled={approving}
+                        onClick={recalculate}
+                        className="rounded-lg px-[10px] py-2 text-[12px] font-semibold text-[var(--ink-secondary)] hover:bg-[var(--surface-2)] disabled:opacity-50"
+                      >
+                        Recalculate
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      disabled={busyId === line.id}
+                      onClick={() => resolve(line)}
+                      className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-[13px] py-2 text-[12.5px] font-semibold hover:bg-[var(--surface-2)] disabled:opacity-50"
+                    >
+                      {line.severity === "critical" ? "I've updated their details" : "Approve"}
+                    </button>
+                  )}
                   <button
                     onClick={() => query(line)}
                     className="rounded-lg px-[10px] py-2 text-[12px] font-semibold text-[var(--ink-secondary)] hover:bg-[var(--surface-2)]"
@@ -265,8 +310,12 @@ export function ReviewPanel({
         <div className="max-w-[46ch] text-xs text-[var(--ink-secondary)]">
           {blocking.length > 0 ? (
             <>
-              <strong className="text-[var(--ink)]">1 item</strong> is blocking this run — resolve Jack Whitmore&rsquo;s bank
-              details, or approve the other {approvable} now.
+              <strong className="text-[var(--ink)]">
+                {blocking.length} item{blocking.length === 1 ? "" : "s"}
+              </strong>{" "}
+              {blocking.length === 1 ? "is" : "are"} blocking this run — resolve{" "}
+              {blocking.map((l) => l.employee_name).join(", ")}
+              {engineRunId ? ", then recalculate." : `, or approve the other ${approvable} now.`}
             </>
           ) : (
             "Every item has been reviewed. Approving will submit the BACS file and file RTI with HMRC on payday."
@@ -274,10 +323,14 @@ export function ReviewPanel({
         </div>
         <button
           onClick={approve}
-          disabled={approving}
+          disabled={approving || (!!engineRunId && blocking.length > 0)}
           className="rounded-lg bg-[var(--accent)] px-[13px] py-2 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-strong)] disabled:opacity-50"
         >
-          {blocking.length > 0 ? `Approve ${approvable} of ${totalEmployees}` : `Approve all ${totalEmployees}`}
+          {engineRunId && blocking.length > 0
+            ? "Fix blocking items to approve"
+            : blocking.length > 0
+              ? `Approve ${approvable} of ${totalEmployees}`
+              : `Approve all ${totalEmployees}`}
         </button>
       </div>
 

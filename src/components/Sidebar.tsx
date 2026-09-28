@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser, UserButton } from "@clerk/nextjs";
+import { BusinessSwitcher } from "@/components/BusinessSwitcher";
+import type { Membership } from "@/lib/tenant";
 
 function NavIcon({
   name,
@@ -170,6 +172,7 @@ function NavIcon({
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" as const, badge: true },
+  { href: "/dashboard/payroll", label: "Pay runs", icon: "bank" as const },
   { href: "/dashboard/runs/diff", label: "Run diff", icon: "diff" as const },
   { href: "/dashboard/profitability", label: "Profitability", icon: "trend" as const },
   { href: "/dashboard/agents", label: "AI Agents", icon: "spark" as const },
@@ -190,12 +193,20 @@ const NAV = [
 ];
 
 export function Sidebar({
+  companyId,
   companyName,
   companyMeta,
+  memberships,
+  isAdmin,
+  viewingAsAdmin,
   pendingCount,
 }: {
+  companyId: string;
   companyName: string;
   companyMeta: string;
+  memberships: Membership[];
+  isAdmin: boolean;
+  viewingAsAdmin: boolean;
   pendingCount: number;
 }) {
   const pathname = usePathname();
@@ -213,15 +224,14 @@ export function Sidebar({
         <div className="font-display text-[17px] font-semibold tracking-tight">Verity</div>
       </Link>
 
-      <div className="flex items-center justify-between gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-2.5 py-[9px] text-[12.5px]">
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-[var(--ink)]">{companyName}</div>
-          <div className="text-[11px] text-[var(--ink-muted)]">{companyMeta}</div>
-        </div>
-        <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 flex-none text-[var(--ink-muted)]">
-          <path d="M7 10l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
+      <BusinessSwitcher
+        activeId={companyId}
+        activeName={companyName}
+        activeMeta={companyMeta}
+        memberships={memberships}
+        isAdmin={isAdmin}
+        viewingAsAdmin={viewingAsAdmin}
+      />
 
       <nav className="flex flex-col gap-0.5">
         <div className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--ink-muted)]">

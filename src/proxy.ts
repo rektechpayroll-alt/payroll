@@ -4,7 +4,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // anyone, since that's what's meant to be shared and browsed without an account.
 // The actual product — /dashboard and everything it talks to — requires a signed-in
 // session.
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/api(.*)"]);
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/api(.*)", "/onboarding(.*)", "/admin(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) await auth.protect();

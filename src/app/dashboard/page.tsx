@@ -4,6 +4,8 @@ import { ReviewPanel } from "@/components/ReviewPanel";
 import { Sparkline } from "@/components/Sparkline";
 import { AuditList } from "@/components/AuditList";
 import { BusinessSnapshot } from "@/components/BusinessSnapshot";
+import { EmptyState } from "@/components/EmptyState";
+import Link from "next/link";
 import { gbp, gbpCompact } from "@/lib/format";
 import { getCompany, getCurrentRun, getLinesForRun, getAuditLog, getCostTrend, getInvoices, getBills } from "@/lib/queries";
 
@@ -12,6 +14,21 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const company = await getCompany();
   const run = await getCurrentRun();
+  if (!run) {
+    return (
+      <EmptyState
+        title={`Welcome to ${company.name}`}
+        heading="No payroll run yet"
+        note="Your books are set up and empty. Add your employees and customers to get started — your first pay run will appear here for review and approval."
+        actions={[
+          { href: "/dashboard/payroll/new", label: "Run payroll" },
+          { href: "/dashboard/employees", label: "Add employees" },
+          { href: "/dashboard/contacts", label: "Add contacts" },
+          { href: "/dashboard/ledger", label: "Raise an invoice" },
+        ]}
+      />
+    );
+  }
   const lines = await getLinesForRun(run.id);
   const audit = await getAuditLog();
   const trend = await getCostTrend();
@@ -19,6 +36,7 @@ export default async function DashboardPage() {
   const arOutstanding = invoices.filter((i) => i.status === "sent").reduce((sum, i) => sum + i.total, 0);
   const apOutstanding = bills.filter((b) => b.status === "unpaid").reduce((sum, b) => sum + b.total, 0);
 
+  const calculated = run.source === "engine";
   const headroom = run.connected_balance - run.net_pay;
   const lastMonthCost = trend[trend.length - 2]?.cost_to_company ?? run.gross_pay;
   const pctChange = (((run.gross_pay + run.employer_ni + run.employer_pension - lastMonthCost) / lastMonthCost) * 100).toFixed(1);
@@ -38,21 +56,31 @@ export default async function DashboardPage() {
               <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
               <path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
-            BACS cutoff in <span className="font-num">{run.bacs_cutoff_label}</span>
+            BACS cutoff {calculated ? "" : "in "}
+            <span className="font-num">{run.bacs_cutoff_label}</span>
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-[7px] text-[12.5px] font-medium text-[var(--ink-secondary)]">
-            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
-              <path d="M4 12a8 8 0 1 1 3 6.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <path d="M4 18v-4h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Export summary
-          </div>
+          {calculated ? (
+            <Link
+              href={`/dashboard/payroll/${run.id}`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-[7px] text-[12.5px] font-medium text-[var(--ink-secondary)] hover:text-[var(--ink)]"
+            >
+              Payslips &amp; breakdown
+            </Link>
+          ) : null}
+          {run.status !== "open" && (
+            <Link
+              href="/dashboard/payroll/new"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-[7px] text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]"
+            >
+              Run payroll
+            </Link>
+          )}
         </div>
       </div>
 
       {run.mid_month_note && <Banner title="Mid-month check already ran · 14 Sep" text={run.mid_month_note} />}
 
-      <BusinessSnapshot bankBalance={run.connected_balance} arOutstanding={arOutstanding} apOutstanding={apOutstanding} />
+      {!calculated && <BusinessSnapshot bankBalance={run.connected_balance} arOutstanding={arOutstanding} apOutstanding={apOutstanding} />}
 
       <StatRow>
         <StatTile
@@ -60,7 +88,7 @@ export default async function DashboardPage() {
           value={gbp(run.net_pay)}
           meta={
             <div className="flex justify-between">
-              <span>{company.employee_count} employees</span>
+              <span>{calculated ? lines.length : company.employee_count} employees</span>
               <span>Faster Payments ready</span>
             </div>
           }
@@ -76,6 +104,19 @@ export default async function DashboardPage() {
             </>
           }
         />
+        {calculated ? (
+          <StatTile
+            label="Deductions · this run"
+            value={gbp(run.gross_pay - run.net_pay)}
+            meta={
+              <>
+                <MetaRow label="Income tax" value={gbp(run.total_tax)} />
+                <MetaRow label="Employee NI" value={gbp(run.total_employee_ni)} />
+                <MetaRow label="Pension + loans" value={gbp(run.total_employee_pension + run.total_student_loan)} />
+              </>
+            }
+          />
+        ) : (
         <StatTile
           label="Funds check · BACS run"
           value={gbp(run.net_pay)}
@@ -90,10 +131,15 @@ export default async function DashboardPage() {
             text: `${gbp(headroom)} headroom`,
           }}
         />
+        )}
       </StatRow>
 
       <div className="grid grid-cols-1 items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_296px]">
-        <ReviewPanel initialLines={lines} totalEmployees={company.employee_count} />
+        <ReviewPanel
+          initialLines={lines}
+          totalEmployees={calculated ? lines.length : company.employee_count}
+          engineRunId={calculated && run.status === "open" ? run.id : undefined}
+        />
 
         <aside className="flex flex-col gap-3.5">
           <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
@@ -105,7 +151,7 @@ export default async function DashboardPage() {
                 <span className="font-display text-[19px] font-semibold font-num">
                   {gbpCompact(run.gross_pay + run.employer_ni + run.employer_pension)}
                 </span>
-                <span className="text-xs text-[var(--ink-muted)]">this run, +{pctChange}% vs Aug</span>
+                <span className="text-xs text-[var(--ink-muted)]">this run, {Number(pctChange) >= 0 ? "+" : ""}{pctChange}% vs last month</span>
               </div>
               <Sparkline labels={trend.map((t) => t.month_label)} series={[{ values: trend.map((t) => t.cost_to_company), colorVar: "--series-1" }]} />
             </div>

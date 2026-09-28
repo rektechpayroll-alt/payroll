@@ -410,12 +410,155 @@ async function createSchema(): Promise<void> {
       credit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Multi-business accounts (lib/tenant.ts). Each business is a row in companies;
+    -- company_members links Clerk users to the businesses they can open.
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS created_by TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false;
+
+    CREATE TABLE IF NOT EXISTS company_members (
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      email TEXT,
+      name TEXT,
+      role TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner', 'member')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (company_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS company_members_user_idx ON company_members (user_id);
+
+    -- Payroll engine (lib/payroll). Employee pay details:
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS pay_basis TEXT NOT NULL DEFAULT 'salary';
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS annual_salary DOUBLE PRECISION;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS hourly_rate DOUBLE PRECISION;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS pay_frequency TEXT NOT NULL DEFAULT 'monthly';
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS ni_category TEXT NOT NULL DEFAULT 'A';
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS student_loan_plan TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS postgrad_loan BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS pension_enrolled BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS pension_employee_pct DOUBLE PRECISION NOT NULL DEFAULT 5;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS pension_employer_pct DOUBLE PRECISION NOT NULL DEFAULT 3;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS date_of_birth TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_director BOOLEAN NOT NULL DEFAULT false;
+    -- P45 figures from a previous employment in the current tax year.
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS previous_pay DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS previous_tax DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS leaving_date TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS pension_scheme TEXT NOT NULL DEFAULT 'relief_at_source';
+
+    -- Runs calculated by the engine (source = 'engine') vs the illustrative sample runs.
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'sample';
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS frequency TEXT;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS pay_date DATE;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS tax_year TEXT;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS tax_period INTEGER;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_tax DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_employee_ni DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_employee_pension DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_student_loan DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+    -- Full payslip breakdown per line.
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS basic_pay DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS additions DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS hours_worked DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS gross_pay DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS taxable_pay DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS income_tax DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_ni DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employer_ni DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_pension DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employer_pension DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS student_loan DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS postgrad_loan DOUBLE PRECISION;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS tax_code_used TEXT;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS ni_category_used TEXT;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS tax_basis TEXT;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS flags JSONB;
+
+    -- Payroll engine, part 2: statutory pay, salary sacrifice, benefits, bank details, HMRC setup.
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS payrolled_benefits_annual DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days TEXT NOT NULL DEFAULT '1,2,3,4,5';
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_account_name TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_sort_code TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS gender TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_line1 TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS address_line2 TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS postcode TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS payroll_id TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS starter_declaration TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS paye_reference TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS accounts_office_reference TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS claim_employment_allowance BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS small_employer_relief BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS bank_account_name TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS bank_sort_code TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS bacs_sun TEXT;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS period_start DATE;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS period_end DATE;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_statutory_pay DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS total_ssp DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS statutory_recovered DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS employment_allowance_used DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS statutory_pay DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS statutory_recoverable_pay DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS absence_deduction DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS salary_sacrifice DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS payrolled_benefits DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS statutory_breakdown JSONB;
+
+    CREATE TABLE IF NOT EXISTS absences (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      average_weekly_earnings DOUBLE PRECISION,
+      deduct_pay BOOLEAN NOT NULL DEFAULT true,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS absences_employee_idx ON absences (employee_id, start_date);
+
+    -- HMRC Real Time Information (lib/rti). NI band earnings per payslip feed the FPS.
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS ni_at_lel DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS ni_lel_to_pt DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS ni_pt_to_uel DOUBLE PRECISION NOT NULL DEFAULT 0;
+    ALTER TABLE payroll_lines ADD COLUMN IF NOT EXISTS employee_pension_basis TEXT;
+
+    CREATE TABLE IF NOT EXISTS rti_submissions (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('FPS', 'EPS')),
+      run_id TEXT REFERENCES payroll_runs(id) ON DELETE SET NULL,
+      tax_year TEXT NOT NULL,
+      tax_month INTEGER,
+      test_in_live BOOLEAN NOT NULL DEFAULT false,
+      environment TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      irmark TEXT,
+      correlation_id TEXT,
+      poll_url TEXT,
+      poll_interval INTEGER,
+      request_xml TEXT NOT NULL,
+      response_xml TEXT,
+      errors JSONB,
+      submitted_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS rti_submissions_company_idx ON rti_submissions (company_id, created_at DESC);
   `);
 }
 
+export const DEMO_COMPANY_ID = "harrow-vale";
+
 async function seed(): Promise<void> {
   const pool = getPool();
-  const companyId = "harrow-vale";
+  const companyId = DEMO_COMPANY_ID;
   const existing = await pool.query("SELECT id FROM companies WHERE id = $1", [companyId]);
   if (existing.rowCount) {
     // Base seed already ran in an earlier version of the schema — still make
@@ -427,13 +570,23 @@ async function seed(): Promise<void> {
     await seedBusinessOps(companyId);
     await seedFinanceExtras(companyId);
     await seedGeneralLedger(companyId);
+    await pool.query("UPDATE companies SET is_demo = true WHERE id = $1 AND NOT is_demo", [companyId]);
     return;
   }
 
   await pool.query(
-    "INSERT INTO companies (id, name, employee_count, pay_schedule) VALUES ($1, $2, $3, $4)",
+    "INSERT INTO companies (id, name, employee_count, pay_schedule, is_demo) VALUES ($1, $2, $3, $4, true)",
     [companyId, "Harrow & Vale Property Group", 15, "Weekly + monthly"]
   );
+  await seedSampleData(companyId);
+}
+
+/**
+ * Fills an existing (empty) company with the Harrow & Vale sample data set — the demo
+ * company itself, and any new business that chooses "start with sample data".
+ */
+export async function seedSampleData(companyId: string): Promise<void> {
+  const pool = getPool();
 
   const runId = randomUUID();
   await pool.query(
@@ -592,6 +745,11 @@ async function seed(): Promise<void> {
   await seedGeneralLedger(companyId);
 }
 
+/** A brand-new business with no sample data still needs its chart of accounts. */
+export async function seedBlankCompany(companyId: string): Promise<void> {
+  await seedChartOfAccounts(getPool(), companyId);
+}
+
 /** Chart of accounts, plus a ledger journal for any payroll run approved before the ledger existed. */
 async function seedGeneralLedger(companyId: string): Promise<void> {
   const pool = getPool();
@@ -674,25 +832,54 @@ async function seedEmployeesAndIntegrations(companyId: string): Promise<void> {
 
   const existingIntegrations = await pool.query("SELECT id FROM integrations WHERE company_id = $1 LIMIT 1", [companyId]);
   if (!existingIntegrations.rowCount) {
-    const integrations: Array<{ id: string; name: string; category: string; description: string; status: string; lastSyncedAt: string | null }> = [
-      { id: "rotacloud", name: "RotaCloud", category: "Time & attendance", description: "Auto-maps rota exports into payroll hours every cycle.", status: "connected", lastSyncedAt: "Today, 06:12" },
-      { id: "timetastic", name: "Timetastic", category: "Leave management", description: "Syncs approved leave so payroll reflects unpaid/statutory days automatically.", status: "not_connected", lastSyncedAt: null },
-      { id: "openbanking", name: "Open Banking feed", category: "Bank & payments", description: "Reconciles BACS payments and expense receipts against the connected account.", status: "connected", lastSyncedAt: "Today, 05:47" },
-      { id: "hmrc", name: "HMRC Government Gateway", category: "Compliance", description: "Direct RTI (FPS/EPS) submission on every payroll run.", status: "connected", lastSyncedAt: "27 Aug, 09:02" },
-      { id: "nest", name: "NEST Pension", category: "Compliance", description: "Auto-enrolment and contribution submission for eligible employees.", status: "connected", lastSyncedAt: "27 Aug, 09:04" },
-      { id: "xero", name: "Xero", category: "Accounting", description: "Posts payroll journals to your general ledger after each approved run.", status: "not_connected", lastSyncedAt: null },
+    const integrations: Array<{ name: string; category: string; description: string; status: string; lastSyncedAt: string | null }> = [
+      { name: "RotaCloud", category: "Time & attendance", description: "Auto-maps rota exports into payroll hours every cycle.", status: "connected", lastSyncedAt: "Today, 06:12" },
+      { name: "Timetastic", category: "Leave management", description: "Syncs approved leave so payroll reflects unpaid/statutory days automatically.", status: "not_connected", lastSyncedAt: null },
+      { name: "Open Banking feed", category: "Bank & payments", description: "Reconciles BACS payments and expense receipts against the connected account.", status: "connected", lastSyncedAt: "Today, 05:47" },
+      { name: "HMRC Government Gateway", category: "Compliance", description: "Direct RTI (FPS/EPS) submission on every payroll run.", status: "connected", lastSyncedAt: "27 Aug, 09:02" },
+      { name: "NEST Pension", category: "Compliance", description: "Auto-enrolment and contribution submission for eligible employees.", status: "connected", lastSyncedAt: "27 Aug, 09:04" },
+      { name: "Xero", category: "Accounting", description: "Posts payroll journals to your general ledger after each approved run.", status: "not_connected", lastSyncedAt: null },
     ];
     for (let i = 0; i < integrations.length; i++) {
       const ig = integrations[i];
       await pool.query(
         `INSERT INTO integrations (id, company_id, name, category, description, status, last_synced_at, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [ig.id, companyId, ig.name, ig.category, ig.description, ig.status, ig.lastSyncedAt, i]
+        [randomUUID(), companyId, ig.name, ig.category, ig.description, ig.status, ig.lastSyncedAt, i]
       );
     }
   }
 
+  await seedSamplePayDetails(companyId);
   await seedOnboardingTasks(companyId);
+}
+
+/** Salaries and loan plans for the sample roster, so the payroll engine has real inputs. Only fills blanks. */
+async function seedSamplePayDetails(companyId: string): Promise<void> {
+  const pay: Array<[name: string, salary: number, plan: string | null]> = [
+    ["Jack Whitmore", 28_500, null],
+    ["Layla Bennett", 25_000, "2"],
+    ["Ronke Okafor", 32_000, "2"],
+    ["Marcus Chen", 72_000, null],
+    ["Priya Anand", 34_000, null],
+    ["Tomasz Nowak", 58_000, null],
+    ["Grace Adeyemi", 39_000, "1"],
+    ["Sam O'Rourke", 33_000, null],
+    ["Farah Hussain", 42_000, null],
+    ["Ben Coates", 30_000, "5"],
+    ["Tariq Ahmed", 33_000, null],
+    ["Hannah Fischer", 44_000, null],
+    ["Owen Blake", 32_000, null],
+    ["Nadia Petrov", 18_500, null],
+    ["Callum Reid", 15_500, "5"],
+  ];
+  for (const [name, salary, plan] of pay) {
+    await getPool().query(
+      `UPDATE employees SET annual_salary = $3, student_loan_plan = COALESCE(student_loan_plan, $4)
+       WHERE company_id = $1 AND name = $2 AND annual_salary IS NULL`,
+      [companyId, name, salary, plan]
+    );
+  }
 }
 
 const CLOSE_TASK_LABELS = [

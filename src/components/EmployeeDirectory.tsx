@@ -146,6 +146,8 @@ function NewEmployeeForm({ onCreated, onCancel }: { onCreated: (employee: Employ
   const [taxCode, setTaxCode] = useState("1257L");
   const [niNumber, setNiNumber] = useState("");
   const [weeklyHours, setWeeklyHours] = useState("37.5");
+  const [annualSalary, setAnnualSalary] = useState("");
+  const [payFrequency, setPayFrequency] = useState("monthly");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,6 +171,8 @@ function NewEmployeeForm({ onCreated, onCancel }: { onCreated: (employee: Employ
           taxCode,
           niNumber: niNumber || undefined,
           weeklyHours: Number(weeklyHours),
+          annualSalary: annualSalary ? Number(annualSalary) : null,
+          payFrequency,
         }),
       });
       const data = await res.json();
@@ -192,7 +196,14 @@ function NewEmployeeForm({ onCreated, onCancel }: { onCreated: (employee: Employ
         <input value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="Start date, e.g. 1 Oct 2026" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} placeholder="Weekly hours" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={taxCode} onChange={(e) => setTaxCode(e.target.value)} placeholder="Tax code" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]" />
-        <input value={niNumber} onChange={(e) => setNiNumber(e.target.value)} placeholder="NI number (optional at this stage)" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)] sm:col-span-2" />
+        <input value={niNumber} onChange={(e) => setNiNumber(e.target.value)} placeholder="NI number (optional at this stage)" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]" />
+        <input value={annualSalary} onChange={(e) => setAnnualSalary(e.target.value)} placeholder="Annual salary (£)" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]" />
+        <select value={payFrequency} onChange={(e) => setPayFrequency(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)]">
+          <option value="monthly">Paid monthly</option>
+          <option value="weekly">Paid weekly</option>
+          <option value="fortnightly">Paid fortnightly</option>
+          <option value="four_weekly">Paid four-weekly</option>
+        </select>
       </div>
       <div className="mt-3.5 flex items-center justify-end gap-2">
         {error && <span className="mr-auto text-[12px] font-semibold text-[var(--critical-ink)]">{error}</span>}

@@ -25,7 +25,7 @@ export default async function SimulatorPage() {
         lines={lines}
         baselineMonthlyCost={baselineMonthlyCost}
         headcount={company.employee_count}
-        bonusBudget={stats.bonus_budget}
+        bonusBudget={stats?.bonus_budget ?? 0}
       />
     </div>
   );

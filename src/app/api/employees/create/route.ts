@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
     taxCode: taxCode?.trim() || "1257L",
     niNumber: niNumber?.trim() || "TBC",
     weeklyHours,
+    annualSalary: typeof body?.annualSalary === "number" && body.annualSalary >= 0 ? body.annualSalary : null,
+    payFrequency: ["weekly", "fortnightly", "four_weekly", "monthly"].includes(body?.payFrequency) ? body.payFrequency : "monthly",
   });
   return NextResponse.json({ employee });
 }

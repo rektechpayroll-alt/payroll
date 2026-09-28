@@ -1,10 +1,13 @@
 import { SettingsForm } from "@/components/SettingsForm";
+import { PayrollSettingsForm } from "@/components/PayrollSettingsForm";
+import { getPayrollSettings } from "@/lib/payroll/records";
 import { getCompany } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const company = await getCompany();
+  const payroll = await getPayrollSettings();
 
   return (
     <div>
@@ -13,6 +16,7 @@ export default async function SettingsPage() {
         <div className="mt-1 text-[13px] text-[var(--ink-secondary)]">Company details, approval rules, and notification preferences.</div>
       </div>
       <SettingsForm company={company} />
+      <PayrollSettingsForm settings={payroll} />
     </div>
   );
 }

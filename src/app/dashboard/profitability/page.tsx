@@ -2,6 +2,7 @@ import { StatRow, StatTile, MetaRow } from "@/components/StatTile";
 import { Sparkline, ChartLegend } from "@/components/Sparkline";
 import { RecommendationList } from "@/components/RecommendationList";
 import { gbp } from "@/lib/format";
+import { EmptyState } from "@/components/EmptyState";
 import { getCompany, getCostTrend, getProfitabilityStats, getRecommendations } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,15 @@ export default async function ProfitabilityPage() {
   const trend = await getCostTrend();
   const stats = await getProfitabilityStats();
   const recs = await getRecommendations();
+  if (!stats) {
+    return (
+      <EmptyState
+        title="Profitability index"
+        heading="Not enough history yet"
+        note="The profitability index is built from your payroll runs and revenue over time. It will fill in once you've run payroll."
+      />
+    );
+  }
 
   return (
     <div>

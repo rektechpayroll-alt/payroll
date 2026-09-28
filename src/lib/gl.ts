@@ -125,10 +125,25 @@ type RunForJournal = {
   employer_pension: number;
   net_pay: number;
   created_at: Date;
+  source: string;
+  /** DATE read as text — a JS Date would shift a day in non-UTC timezones. */
+  pay_date_text: string | null;
+  total_tax: number;
+  total_employee_ni: number;
+  total_employee_pension: number;
+  total_student_loan: number;
+  employment_allowance_used: number;
+  statutory_recovered: number;
 };
+
+/** A credit that can come out negative (e.g. a PAYE refund month) is booked as a debit instead. */
+function creditOrDebit(accountCode: string, description: string, amount: number): JournalLineInput {
+  return amount < 0 ? { accountCode, description, debit: -amount } : { accountCode, description, credit: amount };
+}
 
 /** "Wed 30 Sep" + the run's creation year → "2026-09-30"; falls back to the creation date. */
 function payrollJournalDate(run: RunForJournal): string {
+  if (run.pay_date_text) return run.pay_date_text;
   const created = new Date(run.created_at);
   const parsed = new Date(`${run.payday.replace(/^\w{3}\s+/, "")} ${created.getUTCFullYear()} 12:00 UTC`);
   return (Number.isNaN(parsed.getTime()) ? created : parsed).toISOString().slice(0, 10);
@@ -147,30 +162,60 @@ function payrollJournalDate(run: RunForJournal): string {
  *     Cr 2230 Pension payable          employer pension
  */
 export async function postPayrollRunJournal(pool: Pool, runId: string): Promise<{ journalId: string; created: boolean }> {
-  const { rows } = await pool.query("SELECT * FROM payroll_runs WHERE id = $1", [runId]);
+  const { rows } = await pool.query("SELECT *, to_char(pay_date, 'YYYY-MM-DD') AS pay_date_text FROM payroll_runs WHERE id = $1", [runId]);
   const run = rows[0] as (RunForJournal & { status: string }) | undefined;
   if (!run) throw new Error(`Payroll run ${runId} not found`);
   if (!run.status.startsWith("approved")) throw new Error("Only approved payroll runs are posted to the ledger.");
 
   const a = PAYROLL_ACCOUNTS;
-  const deductions = (toPence(run.gross_pay) - toPence(run.net_pay)) / 100;
+  // Engine runs know exactly what was deducted; sample runs only have gross and net.
+  const lines: JournalLineInput[] =
+    run.source === "engine"
+      ? [
+          { accountCode: a.grossWages, description: "Gross pay", debit: run.gross_pay },
+          { accountCode: a.employerNi, description: "Employer National Insurance", debit: run.employer_ni },
+          { accountCode: a.employerPension, description: "Employer pension contributions", debit: run.employer_pension },
+          { accountCode: a.netWagesPayable, description: "Net pay due to employees", credit: run.net_pay },
+          creditOrDebit(
+            a.payeNiPayable,
+            "PAYE, employee and employer NI and student loans due to HMRC",
+            run.total_tax + run.total_employee_ni + run.employer_ni + run.total_student_loan
+          ),
+          {
+            accountCode: a.pensionPayable,
+            description: "Employee and employer pension due to provider",
+            credit: run.total_employee_pension + run.employer_pension,
+          },
+          // Employment Allowance reduces employer NI owed; statutory pay recovered reduces what's paid to HMRC.
+          { accountCode: a.payeNiPayable, description: "Employment Allowance claimed", debit: run.employment_allowance_used },
+          { accountCode: a.employerNi, description: "Employment Allowance claimed", credit: run.employment_allowance_used },
+          { accountCode: a.payeNiPayable, description: "Statutory pay recovered from HMRC", debit: run.statutory_recovered },
+          { accountCode: a.grossWages, description: "Statutory pay recovered from HMRC", credit: run.statutory_recovered },
+        ]
+      : sampleRunLines(run);
   return postJournal(pool, {
     companyId: run.company_id,
     date: payrollJournalDate(run),
     narration: `Payroll — ${run.period_label} (${run.pay_period})`,
     sourceType: "payroll_run",
     sourceId: run.id,
-    lines: [
-      { accountCode: a.grossWages, description: "Gross pay", debit: run.gross_pay },
-      { accountCode: a.employerNi, description: "Employer National Insurance", debit: run.employer_ni },
-      { accountCode: a.employerPension, description: "Employer pension contributions", debit: run.employer_pension },
-      { accountCode: a.netWagesPayable, description: "Net pay due to employees", credit: run.net_pay },
-      {
-        accountCode: a.payeNiPayable,
-        description: "PAYE, employee deductions and employer NI due to HMRC",
-        credit: deductions + run.employer_ni,
-      },
-      { accountCode: a.pensionPayable, description: "Employer pension due to provider", credit: run.employer_pension },
-    ],
+    lines,
   });
+}
+
+function sampleRunLines(run: RunForJournal): JournalLineInput[] {
+  const a = PAYROLL_ACCOUNTS;
+  const deductions = (toPence(run.gross_pay) - toPence(run.net_pay)) / 100;
+  return [
+    { accountCode: a.grossWages, description: "Gross pay", debit: run.gross_pay },
+    { accountCode: a.employerNi, description: "Employer National Insurance", debit: run.employer_ni },
+    { accountCode: a.employerPension, description: "Employer pension contributions", debit: run.employer_pension },
+    { accountCode: a.netWagesPayable, description: "Net pay due to employees", credit: run.net_pay },
+    {
+      accountCode: a.payeNiPayable,
+      description: "PAYE, employee deductions and employer NI due to HMRC",
+      credit: deductions + run.employer_ni,
+    },
+    { accountCode: a.pensionPayable, description: "Employer pension due to provider", credit: run.employer_pension },
+  ];
 }
