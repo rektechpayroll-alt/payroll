@@ -9,7 +9,7 @@ import { expenseAccountFor, journalHash, postJournal, reverseJournal, type Journ
  * changes and backfills existing data.
  */
 
-export type DocType = "invoice" | "bill" | "expense_claim" | "mileage_claim" | "fixed_asset";
+export type DocType = "invoice" | "bill" | "expense_claim" | "mileage_claim" | "fixed_asset" | "bank_transaction";
 
 type Desired = { sourceType: string; sourceId: string; date: string; narration: string; lines: JournalLineInput[] };
 
@@ -34,6 +34,7 @@ const FAMILY: Record<DocType, string[]> = {
   expense_claim: ["expense_claim", "expense_claim_payment"],
   mileage_claim: ["mileage_claim", "mileage_claim_payment"],
   fixed_asset: ["fixed_asset"],
+  bank_transaction: ["bank_transaction"],
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -151,6 +152,27 @@ async function desiredFor(pool: Pool, companyId: string, type: DocType, id: stri
         ],
       });
     }
+  }
+
+  if (type === "bank_transaction") {
+    // A statement line reconciled straight to an account (bank fees, a supplier with no bill, sundry income).
+    const { rows } = await pool.query("SELECT * FROM bank_transactions WHERE id = $1 AND company_id = $2", [id, companyId]);
+    const t = rows[0];
+    if (!t || t.status !== "matched" || !t.account_code) return out;
+    const money = [
+      { accountCode: A.bank, description: t.description },
+      { accountCode: t.account_code, description: t.description },
+    ];
+    out.push({
+      sourceType: "bank_transaction",
+      sourceId: id,
+      date: ledgerDate(t.txn_date),
+      narration: `Bank: ${t.description}`,
+      lines:
+        t.direction === "credit"
+          ? [{ ...money[0], debit: t.amount }, { ...money[1], credit: t.amount }]
+          : [{ ...money[1], debit: t.amount }, { ...money[0], credit: t.amount }],
+    });
   }
 
   if (type === "fixed_asset") {

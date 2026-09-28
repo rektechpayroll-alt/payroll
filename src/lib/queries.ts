@@ -953,8 +953,8 @@ export async function payInvoiceByCard(id: string): Promise<Invoice> {
 
   const txnId = randomUUID();
   await pool.query(
-    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_invoice_id, sort_order)
-     VALUES ($1,$2,$3,$4,$5,'credit',NULL,'matched',$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_invoice_id, source, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'credit',NULL,'matched',$6,'app',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
     [
       txnId,
       companyId,
@@ -1034,8 +1034,8 @@ export async function payBill(id: string): Promise<Bill> {
   if (!bill) throw new Error("Bill not found");
 
   await pool.query(
-    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_bill_id, sort_order)
-     VALUES ($1,$2,$3,$4,$5,'debit',$6,'matched',$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+    `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, matched_bill_id, source, sort_order)
+     VALUES ($1,$2,$3,$4,$5,'debit',$6,'matched',$7,'app',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
     [
       randomUUID(),
       companyId,
@@ -1249,8 +1249,8 @@ export async function updateExpenseClaimStatus(id: string, status: ExpenseClaim[
       const { rows: empRows } = await pool.query("SELECT name FROM employees WHERE id = $1", [claim.employee_id]);
       const employeeName = (empRows[0]?.name as string | undefined) ?? "employee";
       await pool.query(
-        `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, sort_order)
-         VALUES ($1,$2,$3,$4,$5,'debit','Expense reimbursement','unmatched',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
+        `INSERT INTO bank_transactions (id, company_id, txn_date, description, amount, direction, category, status, source, sort_order)
+         VALUES ($1,$2,$3,$4,$5,'debit','Expense reimbursement','unmatched','app',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bank_transactions WHERE company_id = $2))`,
         [
           randomUUID(),
           companyId,

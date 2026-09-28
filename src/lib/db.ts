@@ -563,6 +563,42 @@ async function createSchema(): Promise<void> {
       WHERE reversed_by IS NULL AND reverses IS NULL;
     ALTER TABLE companies ADD COLUMN IF NOT EXISTS ledger_version INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS wages_paid_at DATE;
+
+    -- Bank statements (lib/banking). A bank_transactions row is either a statement line
+    -- (source 'import', or the illustrative 'demo' feed) or a payment recorded inside Verity
+    -- (source 'app'), which a statement line later confirms via matched_txn_id.
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'demo';
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS import_id TEXT;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS balance_after DOUBLE PRECISION;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS account_code TEXT;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS matched_txn_id TEXT;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS rule_id TEXT;
+    ALTER TABLE bank_transactions ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMPTZ;
+    CREATE UNIQUE INDEX IF NOT EXISTS bank_transactions_dedupe ON bank_transactions (company_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS bank_imports (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      format TEXT NOT NULL,
+      line_count INTEGER NOT NULL,
+      imported_count INTEGER NOT NULL,
+      duplicate_count INTEGER NOT NULL,
+      closing_balance DOUBLE PRECISION,
+      closing_date DATE,
+      imported_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS bank_rules (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      contains TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'any' CHECK (direction IN ('any', 'credit', 'debit')),
+      account_code TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 }
 

@@ -446,7 +446,13 @@ export function LedgerHub({
         <section className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
           <div className="border-b border-[var(--border)] px-[18px] py-[15px]">
             <h2 className="font-display text-[16.5px] font-semibold">Connected account feed</h2>
-            <div className="mt-0.5 text-xs text-[var(--ink-muted)]">Open Banking &middot; unmatched credits are checked against open invoices automatically</div>
+            <div className="mt-0.5 text-xs text-[var(--ink-muted)]">
+              Unmatched credits are checked against open invoices. To import real statements and reconcile everything, use{" "}
+              <a href="/dashboard/banking" className="font-semibold text-[var(--accent-strong)]">
+                Banking
+              </a>
+              .
+            </div>
           </div>
           <div>
             {transactions.map((t, i) => {
