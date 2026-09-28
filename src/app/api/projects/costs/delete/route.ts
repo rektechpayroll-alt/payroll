@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
 import { jsonAction } from "@/lib/http";
-import { createProject } from "@/lib/projects/service";
-import { projectInput } from "../input";
+import { deleteCost } from "@/lib/projects/service";
 
 export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
-  return jsonAction(async () => ({ id: await createProject(projectInput(b)) }));
+  return jsonAction(() => deleteCost(String(b?.id ?? "")));
 }

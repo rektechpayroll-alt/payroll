@@ -1,12 +1,13 @@
 import { getCompany, getBills, getPurchaseOrders } from "@/lib/queries";
 import { withBillOverdueStatus, summarizePayables } from "@/lib/purchasing";
 import { PurchasingHub } from "@/components/PurchasingHub";
+import { projectOptions } from "@/lib/projects/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function PurchasingPage() {
   const company = await getCompany();
-  const [rawBills, purchaseOrders] = await Promise.all([getBills(), getPurchaseOrders()]);
+  const [rawBills, purchaseOrders, projects] = await Promise.all([getBills(), getPurchaseOrders(), projectOptions()]);
   const bills = rawBills.map((b) => withBillOverdueStatus(b));
   const summary = summarizePayables(bills);
 
@@ -20,7 +21,7 @@ export default async function PurchasingPage() {
         </div>
       </div>
 
-      <PurchasingHub initialBills={bills} initialPurchaseOrders={purchaseOrders} summary={summary} />
+      <PurchasingHub initialBills={bills} initialPurchaseOrders={purchaseOrders} summary={summary} projects={projects} />
     </div>
   );
 }

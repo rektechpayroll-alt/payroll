@@ -3,6 +3,7 @@ import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
 import { postPayrollRunJournal, type AccountType } from "./gl";
 import { ledgerDate, syncDepreciation, syncDocument } from "./ledger/posting";
 import { gbpRate } from "./fx/rates";
+import { assertProject } from "./projects/assert";
 import { vatFromGross } from "./vat/calc";
 import { assertVatPeriodOpen } from "./vat/returns";
 import { currentCompanyId, getSession } from "./tenant";
@@ -1014,6 +1015,7 @@ export async function createBill(input: {
   currency?: string;
   /** VAT rate included in the total (20, 5 or 0). */
   vatRate?: number;
+  projectId?: string | null;
 }): Promise<Bill> {
   await ready();
   const companyId = await currentCompanyId();
@@ -1028,9 +1030,9 @@ export async function createBill(input: {
   const nextNumber = 3001 + Number(countRows[0]?.n ?? 0);
   const billId = randomUUID();
   await pool.query(
-    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, vat_rate, vat_amount, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
-    [billId, companyId, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total, vatRate, vatAmount]
+    `INSERT INTO bills (id, company_id, bill_reference, supplier_name, category, bill_date, due_date, status, total, currency, fx_rate, original_total, vat_rate, vat_amount, project_id, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'unpaid',$8,$9,$10,$11,$12,$13,$14,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM bills WHERE company_id = $2))`,
+    [billId, companyId, `BILL-${nextNumber}`, input.supplierName, input.category, input.billDate, input.dueDate, gbpTotal, currency, fxRate, currency === "GBP" ? null : input.total, vatRate, vatAmount, await assertProject(companyId, input.projectId)]
   );
   await syncDocument(pool, companyId, "bill", billId);
   const { rows } = await pool.query("SELECT * FROM bills WHERE id = $1", [billId]);
@@ -1238,16 +1240,16 @@ export async function getExpenseClaims(): Promise<ExpenseClaim[]> {
   return rows as ExpenseClaim[];
 }
 
-export async function createExpenseClaim(input: { employeeId: string; description: string; category: string; amount: number; expenseDate: string; vatAmount?: number }): Promise<ExpenseClaim> {
+export async function createExpenseClaim(input: { employeeId: string; description: string; category: string; amount: number; expenseDate: string; vatAmount?: number; projectId?: string | null }): Promise<ExpenseClaim> {
   await ready();
   const companyId = await currentCompanyId();
   const pool = getPool();
   await assertEmployeeInCompany(input.employeeId, companyId);
   const claimId = randomUUID();
   await pool.query(
-    `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, vat_amount, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM expense_claims WHERE company_id = $2))`,
-    [claimId, companyId, input.employeeId, input.description, input.category, input.amount, input.expenseDate, Math.min(Math.max(0, input.vatAmount ?? 0), input.amount)]
+    `INSERT INTO expense_claims (id, company_id, employee_id, description, category, amount, expense_date, status, vat_amount, project_id, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8,$9,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM expense_claims WHERE company_id = $2))`,
+    [claimId, companyId, input.employeeId, input.description, input.category, input.amount, input.expenseDate, Math.min(Math.max(0, input.vatAmount ?? 0), input.amount), await assertProject(companyId, input.projectId)]
   );
   const { rows } = await pool.query("SELECT * FROM expense_claims WHERE id = $1", [claimId]);
   return rows[0] as ExpenseClaim;
@@ -1335,97 +1337,6 @@ export async function updateMileageClaimStatus(id: string, status: MileageClaim[
 // ---------------------------------------------------------------------------
 // Projects & time tracking (Track Projects)
 // ---------------------------------------------------------------------------
-
-export type Project = {
-  id: string;
-  company_id: string;
-  name: string;
-  client_name: string;
-  status: "active" | "completed" | "on_hold";
-  budget: number;
-  hourly_rate: number;
-  start_date: string;
-  sort_order: number;
-};
-
-export type ProjectTimeEntry = {
-  id: string;
-  project_id: string;
-  employee_id: string | null;
-  employee_name: string;
-  hours: number;
-  entry_date: string;
-  note: string | null;
-  sort_order: number;
-};
-
-export async function getProjects(): Promise<Project[]> {
-  await ready();
-  const companyId = await currentCompanyId();
-  const pool = getPool();
-  const { rows } = await pool.query("SELECT * FROM projects WHERE company_id = $1 ORDER BY sort_order ASC", [companyId]);
-  return rows as Project[];
-}
-
-export async function getProjectTimeEntries(projectId: string): Promise<ProjectTimeEntry[]> {
-  await ready();
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT t.* FROM project_time_entries t JOIN projects p ON p.id = t.project_id
-     WHERE t.project_id = $1 AND p.company_id = $2 ORDER BY t.sort_order DESC`,
-    [projectId, await currentCompanyId()]
-  );
-  return rows as ProjectTimeEntry[];
-}
-
-export async function createProject(input: { name: string; clientName: string; budget: number; startDate: string }): Promise<Project> {
-  await ready();
-  const companyId = await currentCompanyId();
-  const pool = getPool();
-  const projectId = randomUUID();
-  await pool.query(
-    `INSERT INTO projects (id, company_id, name, client_name, status, budget, hourly_rate, start_date, sort_order)
-     VALUES ($1,$2,$3,$4,'active',$5,45,$6,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM projects WHERE company_id = $2))`,
-    [projectId, companyId, input.name, input.clientName, input.budget, input.startDate]
-  );
-  const { rows } = await pool.query("SELECT * FROM projects WHERE id = $1", [projectId]);
-  return rows[0] as Project;
-}
-
-export async function logProjectTime(input: { projectId: string; employeeId: string; hours: number; note: string | null }): Promise<ProjectTimeEntry> {
-  await ready();
-  const companyId = await currentCompanyId();
-  const pool = getPool();
-  const project = await pool.query("SELECT 1 FROM projects WHERE id = $1 AND company_id = $2", [input.projectId, companyId]);
-  if (!project.rowCount) throw new Error("Project not found");
-  const { rows: empRows } = await pool.query("SELECT name FROM employees WHERE id = $1 AND company_id = $2", [input.employeeId, companyId]);
-  if (!empRows.length) throw new Error("Employee not found");
-  const employeeName = (empRows[0]?.name as string | undefined) ?? "Unknown";
-  const entryId = randomUUID();
-  await pool.query(
-    `INSERT INTO project_time_entries (id, project_id, employee_id, employee_name, hours, entry_date, note, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM project_time_entries WHERE project_id = $2))`,
-    [
-      entryId,
-      input.projectId,
-      input.employeeId,
-      employeeName,
-      input.hours,
-      new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-      input.note,
-    ]
-  );
-  const { rows } = await pool.query("SELECT * FROM project_time_entries WHERE id = $1", [entryId]);
-  return rows[0] as ProjectTimeEntry;
-}
-
-export async function updateProjectStatus(id: string, status: Project["status"]): Promise<Project> {
-  await ready();
-  const companyId = await currentCompanyId();
-  const pool = getPool();
-  const { rows } = await pool.query("UPDATE projects SET status = $1 WHERE id = $2 AND company_id = $3 RETURNING *", [status, id, companyId]);
-  return rows[0] as Project;
-}
 
 // ---------------------------------------------------------------------------
 // Contacts — a real customer/supplier directory (Manage Contacts)

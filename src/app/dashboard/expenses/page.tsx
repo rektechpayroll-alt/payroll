@@ -1,11 +1,12 @@
 import { getCompany, getEmployees, getExpenseClaims, getMileageClaims } from "@/lib/queries";
 import { ExpensesHub } from "@/components/ExpensesHub";
+import { projectOptions } from "@/lib/projects/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function ExpensesPage() {
   const company = await getCompany();
-  const [employees, claims, mileage] = await Promise.all([getEmployees(), getExpenseClaims(), getMileageClaims()]);
+  const [employees, claims, mileage, projects] = await Promise.all([getEmployees(), getExpenseClaims(), getMileageClaims(), projectOptions()]);
 
   const pendingClaims = claims.filter((c) => c.status === "submitted");
   const pendingMileage = mileage.filter((m) => m.status === "submitted");
@@ -26,7 +27,7 @@ export default async function ExpensesPage() {
         </div>
       </div>
 
-      <ExpensesHub employees={employees} initialClaims={claims} initialMileage={mileage} totals={totals} />
+      <ExpensesHub employees={employees} initialClaims={claims} initialMileage={mileage} totals={totals} projects={projects} />
     </div>
   );
 }

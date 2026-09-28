@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       total,
       currency: typeof body?.currency === "string" ? body.currency : undefined,
       vatRate: [20, 5, 0].includes(Number(body?.vatRate)) ? Number(body.vatRate) : 0,
+      projectId: typeof body?.projectId === "string" && body.projectId ? body.projectId : null,
     });
     return NextResponse.json({ bill });
   } catch (e) {

@@ -715,6 +715,56 @@ async function createSchema(): Promise<void> {
       PRIMARY KEY (rate_date, currency)
     );
 
+    -- Project costing: hourly or fixed-price billing, billable time at a bill rate with each
+    -- person's cost rate captured when logged, other project costs, and links to invoices,
+    -- bills and expense claims.
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS billing TEXT NOT NULL DEFAULT 'hourly';
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS fixed_price DOUBLE PRECISION;
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS due_date TEXT;
+    ALTER TABLE project_time_entries ADD COLUMN IF NOT EXISTS billable BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE project_time_entries ADD COLUMN IF NOT EXISTS bill_rate DOUBLE PRECISION;
+    ALTER TABLE project_time_entries ADD COLUMN IF NOT EXISTS cost_rate DOUBLE PRECISION;
+    ALTER TABLE project_time_entries ADD COLUMN IF NOT EXISTS invoice_id TEXT;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS project_id TEXT;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS project_id TEXT;
+    ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS project_id TEXT;
+    CREATE TABLE IF NOT EXISTS project_costs (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      cost_date DATE NOT NULL,
+      description TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      billable BOOLEAN NOT NULL DEFAULT true,
+      markup_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+      invoice_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Supplier payments: bank details for suppliers and the business, and each payment file made.
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS iban TEXT;
+    ALTER TABLE companies ADD COLUMN IF NOT EXISTS bic TEXT;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bank_account_name TEXT;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bank_sort_code TEXT;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS iban TEXT;
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bic TEXT;
+    ALTER TABLE bills ADD COLUMN IF NOT EXISTS payment_batch_id TEXT;
+    CREATE TABLE IF NOT EXISTS payment_batches (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      reference TEXT NOT NULL,
+      format TEXT NOT NULL,
+      execution_date DATE NOT NULL,
+      payment_count INTEGER NOT NULL,
+      totals TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     -- Each person's own choice and order of dashboard widgets, per business.
     CREATE TABLE IF NOT EXISTS dashboard_layouts (
       company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,

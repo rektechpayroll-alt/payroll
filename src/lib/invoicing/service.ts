@@ -88,7 +88,7 @@ export async function invoicePdf(invoiceId: string): Promise<{ bytes: Uint8Array
       phone: c.phone,
       vatNumber: c.vat_registered ? c.vat_number : null,
       companyNumber: c.company_number,
-      bank: c.bank_sort_code ? { name: c.bank_account_name, sortCode: c.bank_sort_code, accountNumber: c.bank_account_number } : null,
+      bank: c.bank_sort_code || c.iban ? { name: c.bank_account_name, sortCode: c.bank_sort_code, accountNumber: c.bank_account_number, iban: c.iban, bic: c.bic } : null,
     },
     invoice: {
       number: invoice.invoice_number,

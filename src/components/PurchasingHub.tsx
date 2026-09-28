@@ -47,10 +47,12 @@ export function PurchasingHub({
   initialBills,
   initialPurchaseOrders,
   summary,
+  projects = [],
 }: {
   initialBills: BillWithStatus[];
   initialPurchaseOrders: PurchaseOrder[];
   summary: PayablesSummary;
+  projects?: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"bills" | "pos">("bills");
@@ -131,14 +133,20 @@ export function PurchasingHub({
               <h2 className="font-display text-[16.5px] font-semibold">Supplier bills</h2>
               <div className="mt-0.5 text-xs text-[var(--ink-muted)]">Paying a bill drops a matched debit onto the Verity Ledger bank feed</div>
             </div>
-            <button onClick={() => setBillFormOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]">
-              <PlusIcon />
-              New bill
-            </button>
+            <div className="flex items-center gap-2">
+              <a href="/dashboard/purchasing/pay" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3.5 py-2 text-[12.5px] font-semibold hover:bg-[var(--surface-2)]">
+                Pay suppliers
+              </a>
+              <button onClick={() => setBillFormOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-strong)]">
+                <PlusIcon />
+                New bill
+              </button>
+            </div>
           </div>
 
           {billFormOpen && (
             <NewBillForm
+              projects={projects}
               onCreated={(bill) => {
                 setBills((prev) => [...prev, { ...bill, isOverdue: false, daysOverdue: 0 }]);
                 setBillFormOpen(false);
@@ -250,7 +258,8 @@ export function PurchasingHub({
 }
 
 
-function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void; onCancel: () => void }) {
+function NewBillForm({ projects, onCreated, onCancel }: { projects: Array<{ id: string; name: string }>; onCreated: (bill: Bill) => void; onCancel: () => void }) {
+  const [projectId, setProjectId] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [category, setCategory] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -270,7 +279,7 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
       const res = await fetch("/api/purchasing/bills/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total), currency, vatRate: Number(vatRate) }),
+        body: JSON.stringify({ supplierName, category: category || null, dueDate, total: Number(total), currency, vatRate: Number(vatRate), projectId: projectId || null }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -297,6 +306,14 @@ function NewBillForm({ onCreated, onCancel }: { onCreated: (bill: Bill) => void;
             <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
           ))}
         </select>
+        {projects.length > 0 && (
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" aria-label="Project">
+            <option value="">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>Project: {p.name}</option>
+            ))}
+          </select>
+        )}
         {currency !== "GBP" && Number(total) > 0 && (
           <div className="sm:col-span-full">
             <FxHint currency={currency} amount={Number(total)} />

@@ -28,7 +28,9 @@ export function ExpensesHub({
   initialClaims,
   initialMileage,
   totals,
+  projects = [],
 }: {
+  projects?: Array<{ id: string; name: string }>;
   employees: Employee[];
   initialClaims: ExpenseClaim[];
   initialMileage: MileageClaim[];
@@ -99,6 +101,7 @@ export function ExpensesHub({
           {claimFormOpen && (
             <NewClaimForm
               employees={employees}
+              projects={projects}
               onCreated={(claim) => {
                 setClaims((prev) => [claim, ...prev]);
                 setClaimFormOpen(false);
@@ -197,7 +200,8 @@ export function ExpensesHub({
   );
 }
 
-function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[]; onCreated: (claim: ExpenseClaim) => void; onCancel: () => void }) {
+function NewClaimForm({ employees, projects, onCreated, onCancel }: { employees: Employee[]; projects: Array<{ id: string; name: string }>; onCreated: (claim: ExpenseClaim) => void; onCancel: () => void }) {
+  const [projectId, setProjectId] = useState("");
   const [employeeId, setEmployeeId] = useState(employees[0]?.id ?? "");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
@@ -218,7 +222,7 @@ function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[
       const res = await fetch("/api/expenses/claims/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId, description, category, amount: Number(amount), vatAmount: Number(vatAmount) || 0, expenseDate: date }),
+        body: JSON.stringify({ employeeId, description, category, amount: Number(amount), vatAmount: Number(vatAmount) || 0, expenseDate: date, projectId: projectId || null }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Something went wrong.");
@@ -241,6 +245,14 @@ function NewClaimForm({ employees, onCreated, onCancel }: { employees: Employee[
         <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount £" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={vatAmount} onChange={(e) => setVatAmount(e.target.value)} placeholder="VAT on receipt £ (optional)" inputMode="decimal" className="font-num rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
         <input value={date} onChange={(e) => setDate(e.target.value)} placeholder="Date, e.g. 20 Sep 2026" className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" />
+        {projects.length > 0 && (
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)]" aria-label="Project">
+            <option value="">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>Project: {p.name}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="mt-3.5 flex items-center justify-end gap-2">
         {error && <span className="mr-auto text-[12px] font-semibold text-[var(--critical-ink)]">{error}</span>}

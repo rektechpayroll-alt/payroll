@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "employeeId, description, category, a positive amount and expenseDate are required" }, { status: 400 });
     }
 
-    const claim = await createExpenseClaim({ employeeId, description: description.trim(), category: category.trim(), amount, expenseDate: expenseDate.trim(), vatAmount: Number(body?.vatAmount) || 0 });
+    const claim = await createExpenseClaim({ employeeId, description: description.trim(), category: category.trim(), amount, expenseDate: expenseDate.trim(), vatAmount: Number(body?.vatAmount) || 0, projectId: typeof body?.projectId === "string" && body.projectId ? body.projectId : null });
     return NextResponse.json({ claim });
   } catch (e) {
     return errorResponse(e);

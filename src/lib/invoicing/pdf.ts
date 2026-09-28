@@ -13,7 +13,7 @@ export type InvoicePdfData = {
     phone: string | null;
     vatNumber: string | null;
     companyNumber: string | null;
-    bank: { name: string | null; sortCode: string | null; accountNumber: string | null } | null;
+    bank: { name: string | null; sortCode: string | null; accountNumber: string | null; iban?: string | null; bic?: string | null } | null;
   };
   invoice: {
     number: string;
@@ -157,11 +157,19 @@ export async function renderInvoicePdf(d: InvoicePdfData): Promise<Uint8Array> {
   // Payment details and notes, anchored to the bottom.
   let by = M + 96;
   const bank = d.business.bank;
-  if (bank?.sortCode && bank.accountNumber) {
-    text(page, "How to pay", M, by, bold, 10);
+  if ((bank?.sortCode && bank.accountNumber) || bank?.iban) {
+    text(page, "How to pay", M, by + (bank.iban && bank.sortCode ? 12 : 0), bold, 10);
     by -= 14;
-    text(page, `Bank transfer to ${bank.name ?? d.business.name} · sort code ${bank.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, "$1-$2-$3")} · account ${bank.accountNumber}`, M, by, regular, 9);
-    by -= 12;
+    if (bank.iban && bank.sortCode) by += 12;
+    if (bank.sortCode && bank.accountNumber) {
+      text(page, `Bank transfer to ${bank.name ?? d.business.name} · sort code ${bank.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, "$1-$2-$3")} · account ${bank.accountNumber}`, M, by, regular, 9);
+      by -= 12;
+    }
+    if (bank.iban) {
+      // For customers paying from abroad.
+      text(page, `${bank.sortCode ? "From abroad: " : `Bank transfer to ${bank.name ?? d.business.name} · `}IBAN ${bank.iban.replace(/(.{4})/g, "$1 ").trim()}${bank.bic ? ` · BIC ${bank.bic}` : ""}`, M, by, regular, 9);
+      by -= 12;
+    }
     text(page, `Please use ${d.invoice.number} as the payment reference.`, M, by, regular, 9, muted);
     by -= 18;
   }
