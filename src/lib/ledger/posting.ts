@@ -270,7 +270,7 @@ export async function syncDepreciation(pool: Pool, companyId: string, asAt = tod
 }
 
 /** Current ledger posting rules version — bump to re-run the backfill for every business. */
-export const LEDGER_VERSION = 1;
+export const LEDGER_VERSION = 2;
 
 /** Posts everything a business's documents imply. Idempotent. */
 export async function syncCompanyLedger(pool: Pool, companyId: string): Promise<void> {

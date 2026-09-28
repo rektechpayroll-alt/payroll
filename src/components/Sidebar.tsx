@@ -172,6 +172,7 @@ function NavIcon({
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" as const, badge: true },
+  { href: "/dashboard/insights", label: "Insights", icon: "trend" as const },
   { href: "/dashboard/payroll", label: "Pay runs", icon: "bank" as const },
   { href: "/dashboard/runs/diff", label: "Run diff", icon: "diff" as const },
   { href: "/dashboard/profitability", label: "Profitability", icon: "trend" as const },

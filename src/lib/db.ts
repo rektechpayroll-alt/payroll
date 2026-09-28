@@ -1,7 +1,8 @@
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { postPayrollRunJournal, seedChartOfAccounts } from "./gl";
-import { LEDGER_VERSION, postOpeningBankBalance, syncCompanyLedger } from "./ledger/posting";
+import { LEDGER_VERSION, syncCompanyLedger } from "./ledger/posting";
+import { seedSampleHistory } from "./ledger/sample-history";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -686,6 +687,34 @@ async function createSchema(): Promise<void> {
       account_code TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    -- Budgets per ledger account per month, compared with the ledger's actuals.
+    CREATE TABLE IF NOT EXISTS gl_budgets (
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      account_code TEXT NOT NULL,
+      month DATE NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      PRIMARY KEY (company_id, account_code, month)
+    );
+
+    -- One-off "what if" items the owner adds to the cash flow forecast (a loan, a big purchase).
+    CREATE TABLE IF NOT EXISTS cash_forecast_items (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      item_date DATE NOT NULL,
+      label TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Each person's own choice and order of dashboard widgets, per business.
+    CREATE TABLE IF NOT EXISTS dashboard_layouts (
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      widgets JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (company_id, user_id)
+    );
   `);
 }
 
@@ -888,12 +917,16 @@ export async function seedSampleData(companyId: string): Promise<void> {
  */
 export async function backfillLedgers(): Promise<void> {
   const pool = getPool();
-  const { rows } = await pool.query("SELECT id, is_demo FROM companies WHERE ledger_version < $1", [LEDGER_VERSION]);
+  const { rows } = await pool.query(
+    `SELECT id, is_demo OR EXISTS (SELECT 1 FROM payroll_runs pr WHERE pr.company_id = c.id AND pr.source = 'sample') AS has_sample
+     FROM companies c WHERE ledger_version < $1`,
+    [LEDGER_VERSION]
+  );
   for (const c of rows) {
     await seedChartOfAccounts(pool, c.id);
-    // The demo company gets a starting bank balance so its balance sheet reads sensibly.
-    if (c.is_demo) await postOpeningBankBalance(pool, c.id, "2022-01-01", 120_000);
     await syncCompanyLedger(pool, c.id);
+    // Sample businesses get an opening balance and two years of trading so their reports read sensibly.
+    if (c.has_sample) await seedSampleHistory(pool, c.id);
     await pool.query("UPDATE companies SET ledger_version = $2 WHERE id = $1", [c.id, LEDGER_VERSION]);
   }
 }

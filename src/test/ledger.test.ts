@@ -47,10 +47,14 @@ suite("the full ledger", () => {
     signInAs("user_sample_books", sample);
     const bs = await expectBalancedBooks();
     expect(bs.totalAssets).not.toBe(0);
-    // every sent/paid invoice is in sales
+    // every sent/paid invoice is in sales, plus the sample's trading history receipts
     const invoices = await q.getInvoices();
-    const salesExpected = invoices.filter((i) => i.status === "sent" || i.status === "paid").reduce((s, i) => s + i.subtotal, 0);
+    const { rows } = await getPool().query("SELECT COALESCE(SUM(amount), 0)::float8 AS s FROM bank_transactions WHERE company_id = $1 AND account_code = '4000' AND txn_date <= $2", [sample, today]);
+    expect(rows[0].s).toBeGreaterThan(2_000_000);
+    const salesExpected = invoices.filter((i) => i.status === "sent" || i.status === "paid").reduce((s, i) => s + i.subtotal, 0) + rows[0].s;
     expect(await bal("4000")).toBeCloseTo(salesExpected, 2);
+    // August's wages, PAYE and pension have been paid
+    for (const code of ["2210", "2220", "2230"]) expect(await bal(code)).toBe(0);
     // outstanding invoices are exactly what's in debtors
     expect(await bal("1100")).toBeCloseTo(invoices.filter((i) => i.status === "sent").reduce((s, i) => s + i.total, 0), 2);
     expect((await activeJournals(sample, "depreciation")).length).toBeGreaterThan(10);
