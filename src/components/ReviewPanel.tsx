@@ -100,12 +100,13 @@ export function ReviewPanel({
     try {
       const res = await fetch("/api/runs/approve", { method: "POST" });
       const data = await res.json();
+      const ledgerNote = data.journalPosted ? " Journal posted to Verity Ledger." : "";
       if (data.blockingCount > 0) {
         showToast(
-          `${data.includedCount} payments approved and queued. Jack Whitmore will join the next run once his bank details are confirmed.`
+          `${data.includedCount} payments approved and queued. Jack Whitmore will join the next run once his bank details are confirmed.${ledgerNote}`
         );
       } else {
-        showToast("Payroll approved — BACS submission and HMRC RTI filing triggered automatically.");
+        showToast(`Payroll approved — BACS submission and HMRC RTI filing triggered automatically.${ledgerNote}`);
       }
       router.refresh();
     } finally {

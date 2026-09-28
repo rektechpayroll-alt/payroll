@@ -1,4 +1,4 @@
-import { getCompany, getInvoices, getBankTransactions, getQuotes } from "@/lib/queries";
+import { getCompany, getInvoices, getBankTransactions, getQuotes, getJournals, getTrialBalance } from "@/lib/queries";
 import { withOverdueStatus, summarizeLedger, suggestMatches } from "@/lib/ledger";
 import { LedgerHub } from "@/components/LedgerHub";
 
@@ -6,7 +6,13 @@ export const dynamic = "force-dynamic";
 
 export default async function LedgerPage() {
   const company = await getCompany();
-  const [rawInvoices, transactions, quotes] = await Promise.all([getInvoices(), getBankTransactions(), getQuotes()]);
+  const [rawInvoices, transactions, quotes, journals, trialBalance] = await Promise.all([
+    getInvoices(),
+    getBankTransactions(),
+    getQuotes(),
+    getJournals(),
+    getTrialBalance(),
+  ]);
 
   const invoices = rawInvoices.map((inv) => withOverdueStatus(inv));
   const summary = summarizeLedger(invoices, transactions);
@@ -22,7 +28,7 @@ export default async function LedgerPage() {
         </div>
       </div>
 
-      <LedgerHub initialInvoices={invoices} initialQuotes={quotes} transactions={transactions} summary={summary} suggestions={suggestions} />
+      <LedgerHub initialInvoices={invoices} initialQuotes={quotes} transactions={transactions} summary={summary} suggestions={suggestions} journals={journals} trialBalance={trialBalance} />
     </div>
   );
 }

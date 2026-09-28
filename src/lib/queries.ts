@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getPool, ready, ONBOARDING_TASK_LABELS } from "./db";
+import { postPayrollRunJournal, type AccountType } from "./gl";
 
 const COMPANY_ID = "harrow-vale";
 
@@ -158,7 +159,16 @@ export async function approveRun(runId: string) {
     [randomUUID(), COMPANY_ID, message, detail, now, COMPANY_ID]
   );
 
-  return { status, blockingCount: blocking.length, includedCount: included.length, total: lines.length };
+  // Book the run's cost into Verity Ledger. Idempotent — re-approving never double-posts.
+  const journal = await postPayrollRunJournal(pool, runId);
+
+  return {
+    status,
+    blockingCount: blocking.length,
+    includedCount: included.length,
+    total: lines.length,
+    journalPosted: journal.created,
+  };
 }
 
 /** The most recently created run for this company that predates `beforeRunId` — the "previous" run for the diff view. */
@@ -1291,4 +1301,74 @@ export async function createBudgetLine(input: { category: string; periodLabel: s
   );
   const { rows } = await pool.query("SELECT * FROM budget_lines WHERE id = $1", [id]);
   return rows[0] as BudgetLine;
+}
+
+// ---------------------------------------------------------------------------
+// General ledger — journals and trial balance (Verity Ledger → Journals)
+// ---------------------------------------------------------------------------
+
+export type JournalLine = {
+  account_code: string;
+  account_name: string;
+  description: string;
+  debit: number;
+  credit: number;
+};
+
+export type Journal = {
+  id: string;
+  journal_date: string;
+  narration: string;
+  source_type: string;
+  lines: JournalLine[];
+};
+
+export async function getJournals(): Promise<Journal[]> {
+  await ready();
+  const pool = getPool();
+  const { rows: journals } = await pool.query(
+    `SELECT id, to_char(journal_date, 'YYYY-MM-DD') AS journal_date, narration, source_type
+     FROM gl_journals WHERE company_id = $1 ORDER BY journal_date DESC, created_at DESC`,
+    [COMPANY_ID]
+  );
+  if (!journals.length) return [];
+  const { rows: lines } = await pool.query(
+    `SELECT l.journal_id, l.account_code, COALESCE(a.name, l.account_code) AS account_name, l.description,
+            l.debit::float8 AS debit, l.credit::float8 AS credit
+     FROM gl_journal_lines l
+     LEFT JOIN gl_accounts a ON a.company_id = $2 AND a.code = l.account_code
+     WHERE l.journal_id = ANY($1) ORDER BY l.sort_order ASC`,
+    [journals.map((j) => j.id), COMPANY_ID]
+  );
+  return journals.map((j) => ({
+    ...j,
+    lines: lines
+      .filter((l) => l.journal_id === j.id)
+      .map((l) => ({ account_code: l.account_code, account_name: l.account_name, description: l.description, debit: l.debit, credit: l.credit })),
+  })) as Journal[];
+}
+
+export type TrialBalanceRow = { code: string; name: string; type: AccountType; debit: number; credit: number };
+
+/** Net balance per account with activity, shown on its natural side (debit or credit). */
+export async function getTrialBalance(): Promise<TrialBalanceRow[]> {
+  await ready();
+  const { rows } = await getPool().query(
+    `SELECT a.code, a.name, a.type, COALESCE(SUM(l.debit - l.credit), 0)::float8 AS net
+     FROM gl_accounts a
+     JOIN gl_journal_lines l ON l.account_code = a.code
+     JOIN gl_journals j ON j.id = l.journal_id AND j.company_id = a.company_id
+     WHERE a.company_id = $1
+     GROUP BY a.code, a.name, a.type, a.sort_order
+     HAVING SUM(l.debit - l.credit) <> 0
+     ORDER BY a.code`,
+    [COMPANY_ID]
+  );
+  return rows.map((r) => ({
+    code: r.code,
+    name: r.name,
+    type: r.type,
+    debit: r.net > 0 ? r.net : 0,
+    credit: r.net < 0 ? -r.net : 0,
+  }));
 }

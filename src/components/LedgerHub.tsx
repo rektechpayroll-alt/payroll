@@ -4,7 +4,8 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { gbp } from "@/lib/format";
 import { StatRow, StatTile } from "@/components/StatTile";
-import type { Invoice, BankTransaction, Quote } from "@/lib/queries";
+import type { Invoice, BankTransaction, Quote, Journal, TrialBalanceRow } from "@/lib/queries";
+import { JournalsPanel } from "@/components/JournalsPanel";
 import type { InvoiceWithStatus, LedgerSummary } from "@/lib/ledger";
 
 const STATUS_STYLES: Record<string, { bg: string; ink: string; label: string }> = {
@@ -60,15 +61,19 @@ export function LedgerHub({
   transactions,
   summary,
   suggestions,
+  journals,
+  trialBalance,
 }: {
   initialInvoices: InvoiceWithStatus[];
   initialQuotes: Quote[];
   transactions: BankTransaction[];
   summary: LedgerSummary;
   suggestions: Record<string, string>; // transactionId -> invoiceId
+  journals: Journal[];
+  trialBalance: TrialBalanceRow[];
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"invoices" | "quotes" | "bank">("invoices");
+  const [tab, setTab] = useState<"invoices" | "quotes" | "bank" | "journals">("invoices");
   const [invoices, setInvoices] = useState(initialInvoices);
   const [quotes, setQuotes] = useState(initialQuotes);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -228,7 +233,19 @@ export function LedgerHub({
         >
           Bank reconciliation <span className="font-num text-[var(--ink-muted)]">{transactions.length}</span>
         </button>
+        <button
+          onClick={() => setTab("journals")}
+          className={`rounded-full border px-[13px] py-[7px] text-[12.8px] font-semibold ${
+            tab === "journals"
+              ? "border-transparent bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+              : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink-secondary)]"
+          }`}
+        >
+          Journals <span className="font-num text-[var(--ink-muted)]">{journals.length}</span>
+        </button>
       </div>
+
+      {tab === "journals" && <JournalsPanel journals={journals} trialBalance={trialBalance} />}
 
       {tab === "invoices" && (
         <section className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">

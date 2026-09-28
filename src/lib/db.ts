@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
+import { postPayrollRunJournal, seedChartOfAccounts } from "./gl";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -378,6 +379,37 @@ async function createSchema(): Promise<void> {
     ALTER TABLE bills ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'GBP';
     ALTER TABLE bills ADD COLUMN IF NOT EXISTS fx_rate DOUBLE PRECISION NOT NULL DEFAULT 1;
     ALTER TABLE bills ADD COLUMN IF NOT EXISTS original_total DOUBLE PRECISION;
+
+    -- General ledger (lib/gl.ts). Amounts are NUMERIC so debits and credits sum exactly.
+    CREATE TABLE IF NOT EXISTS gl_accounts (
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('asset', 'liability', 'equity', 'income', 'expense')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (company_id, code)
+    );
+
+    CREATE TABLE IF NOT EXISTS gl_journals (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      journal_date DATE NOT NULL,
+      narration TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (company_id, source_type, source_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gl_journal_lines (
+      id TEXT PRIMARY KEY,
+      journal_id TEXT NOT NULL REFERENCES gl_journals(id) ON DELETE CASCADE,
+      account_code TEXT NOT NULL,
+      description TEXT NOT NULL,
+      debit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
+      credit NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
   `);
 }
 
@@ -394,6 +426,7 @@ async function seed(): Promise<void> {
     await seedLedger(companyId);
     await seedBusinessOps(companyId);
     await seedFinanceExtras(companyId);
+    await seedGeneralLedger(companyId);
     return;
   }
 
@@ -556,6 +589,20 @@ async function seed(): Promise<void> {
   await seedLedger(companyId);
   await seedBusinessOps(companyId);
   await seedFinanceExtras(companyId);
+  await seedGeneralLedger(companyId);
+}
+
+/** Chart of accounts, plus a ledger journal for any payroll run approved before the ledger existed. */
+async function seedGeneralLedger(companyId: string): Promise<void> {
+  const pool = getPool();
+  await seedChartOfAccounts(pool, companyId);
+  const { rows } = await pool.query(
+    `SELECT pr.id FROM payroll_runs pr
+     WHERE pr.company_id = $1 AND pr.status LIKE 'approved%'
+       AND NOT EXISTS (SELECT 1 FROM gl_journals j WHERE j.company_id = $1 AND j.source_type = 'payroll_run' AND j.source_id = pr.id)`,
+    [companyId]
+  );
+  for (const r of rows) await postPayrollRunJournal(pool, r.id);
 }
 
 function emailFor(name: string): string {
